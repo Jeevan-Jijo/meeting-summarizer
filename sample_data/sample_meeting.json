@@ -1,0 +1,92 @@
+{
+  "title": "Q3 MIS Architecture & Launch Planning",
+  "meeting_date": "2026-09-15T10:00:00Z",
+  "duration_seconds": 930.5,
+  "speakers": [
+    { "id": "SPEAKER_00", "label": "Speaker 1", "custom_name": "Alex Rivers", "role": "Lead Architect" },
+    { "id": "SPEAKER_01", "label": "Speaker 2", "custom_name": "Sarah Chen", "role": "Product Manager" },
+    { "id": "SPEAKER_02", "label": "Speaker 3", "custom_name": "Marcus Vance", "role": "Full Stack Engineer" }
+  ],
+  "transcript": [
+    {
+      "segment_id": 1,
+      "speaker_id": "SPEAKER_00",
+      "speaker_label": "Alex Rivers",
+      "start_time": 0.0,
+      "end_time": 18.5,
+      "text": "Good morning everyone. Let's kick off our Q3 planning session for the Meeting Intelligence System. Our primary objective today is locking in the local inference pipeline and setting the MVP milestone dates."
+    },
+    {
+      "segment_id": 2,
+      "speaker_id": "SPEAKER_01",
+      "speaker_label": "Sarah Chen",
+      "start_time": 19.0,
+      "end_time": 42.2,
+      "text": "Thanks Alex. From the product side, data privacy is our number one selling point. Users explicitly demand that zero audio or text data leaves their Windows laptops. We cannot rely on external cloud APIs like OpenAI or paid transcription services."
+    },
+    {
+      "segment_id": 3,
+      "speaker_id": "SPEAKER_02",
+      "speaker_label": "Marcus Vance",
+      "start_time": 43.0,
+      "end_time": 76.8,
+      "text": "I've benchmarked our target specs. With the RTX 4060 8GB VRAM and 16GB RAM, we can run faster-whisper large-v3-turbo with CUDA float16 and Ollama Qwen3 8B sequentially. PyTorch takes around 3.5GB VRAM and Ollama takes about 5.2GB when active, so running them sequentially keeps peak memory safely under 6GB."
+    },
+    {
+      "segment_id": 4,
+      "speaker_id": "SPEAKER_00",
+      "speaker_label": "Alex Rivers",
+      "start_time": 77.5,
+      "end_time": 105.0,
+      "text": "That's a crucial design decision. Let's officially decide to sequence heavy GPU operations in our background worker rather than running Whisper and LLM extraction concurrently. Marcus, can you document this in the architecture specs by this Friday?"
+    },
+    {
+      "segment_id": 5,
+      "speaker_id": "SPEAKER_02",
+      "speaker_label": "Marcus Vance",
+      "start_time": 105.5,
+      "end_time": 120.0,
+      "text": "Will do. I will wrap up the worker queue architecture documentation and commit it to docs/architecture.md by Friday, September 18th."
+    },
+    {
+      "segment_id": 6,
+      "speaker_id": "SPEAKER_01",
+      "speaker_label": "Sarah Chen",
+      "start_time": 121.0,
+      "end_time": 155.4,
+      "text": "What about speaker diarization? Pyannote 3.1 is the gold standard for open-weights diarization, but it requires a free Hugging Face token. If a user doesn't have an HF_TOKEN set in their environment, what happens?"
+    },
+    {
+      "segment_id": 7,
+      "speaker_id": "SPEAKER_00",
+      "speaker_label": "Alex Rivers",
+      "start_time": 156.0,
+      "end_time": 190.2,
+      "text": "Great point. We must make pyannote optional. If HF_TOKEN is absent, the backend should gracefully fallback to single-speaker labeling, flag an informative warning in the UI, and complete transcription and analysis without crashing."
+    },
+    {
+      "segment_id": 8,
+      "speaker_id": "SPEAKER_01",
+      "speaker_label": "Sarah Chen",
+      "start_time": 191.0,
+      "end_time": 215.0,
+      "text": "Perfect. Let's schedule the internal alpha release for October 1st, 2026. Marcus, can you make sure all frontend export formats including Markdown, JSON, and PDF generation are ready for testing by next Tuesday?"
+    },
+    {
+      "segment_id": 9,
+      "speaker_id": "SPEAKER_02",
+      "speaker_label": "Marcus Vance",
+      "start_time": 216.0,
+      "end_time": 240.5,
+      "text": "Yes, I will finalize the export service and PDF generator with reportlab by Tuesday, September 22nd. One open question we have: do we support multi-language auto-detection out of the box in the MVP?"
+    },
+    {
+      "segment_id": 10,
+      "speaker_id": "SPEAKER_00",
+      "speaker_label": "Alex Rivers",
+      "start_time": 241.0,
+      "end_time": 270.0,
+      "text": "Yes, faster-whisper provides automatic language detection natively, so we'll pass language=None to let it auto-detect. All right, let's reconvene next Monday at 10 AM to review the first end-to-end benchmark."
+    }
+  ]
+}
