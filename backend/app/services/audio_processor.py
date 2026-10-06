@@ -7,6 +7,24 @@ from pathlib import Path
 from typing import Tuple, Optional
 from app.core.logging import logger
 
+def get_ffmpeg_binary_path(binary_name: str = "ffmpeg") -> Optional[str]:
+    """Find ffmpeg or ffprobe executable in PATH or WinGet installation directories."""
+    path = shutil.which(binary_name)
+    if path:
+        return path
+    
+    # Check WinGet packages directory fallback
+    local_appdata = os.environ.get("LOCALAPPDATA", "")
+    if local_appdata:
+        winget_dir = os.path.join(local_appdata, r"Microsoft\WinGet\Packages")
+        if os.path.exists(winget_dir):
+            for root, _, files in os.walk(winget_dir):
+                target = f"{binary_name}.exe"
+                if target in files:
+                    full_path = os.path.join(root, target)
+                    return full_path
+    return None
+
 def format_timestamp(seconds: float) -> str:
     """Format seconds into HH:MM:SS format."""
     total_seconds = int(round(seconds))
@@ -16,17 +34,18 @@ def format_timestamp(seconds: float) -> str:
     return f"{hours:02d}:{minutes:02d}:{secs:02d}"
 
 def is_ffmpeg_available() -> bool:
-    """Check if ffmpeg executable is available in PATH."""
-    return shutil.which("ffmpeg") is not None
+    """Check if ffmpeg executable is available in PATH or WinGet."""
+    return get_ffmpeg_binary_path("ffmpeg") is not None
 
 def get_audio_duration(file_path: str) -> float:
     """Extract audio duration using ffprobe or fallback."""
-    if not shutil.which("ffprobe"):
+    ffprobe_bin = get_ffmpeg_binary_path("ffprobe")
+    if not ffprobe_bin:
         logger.warning("ffprobe not found in PATH, using fallback duration estimation.")
         return 0.0
     
     cmd = [
-        "ffprobe",
+        ffprobe_bin,
         "-v", "error",
         "-show_entries", "format=duration",
         "-of", "default=noprint_wrappers=1:nokey=1",
@@ -60,13 +79,14 @@ async def normalize_audio(input_path: str, output_path: str) -> Tuple[bool, str,
     Normalize audio to 16kHz mono 16-bit PCM WAV using FFmpeg.
     Returns (success, message, duration_seconds).
     """
-    if not is_ffmpeg_available():
+    ffmpeg_bin = get_ffmpeg_binary_path("ffmpeg")
+    if not ffmpeg_bin:
         return False, "FFmpeg is not installed or not in system PATH", 0.0
 
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
     
     cmd = [
-        "ffmpeg",
+        ffmpeg_bin,
         "-y",
         "-i", input_path,
         "-vn",

@@ -475,7 +475,7 @@ export default function MeetingDetailPage() {
             <AnalyticsCharts
               speakers={meeting.speakers}
               durationSeconds={meeting.duration_seconds}
-              summary={meeting.summary}
+              summary={meeting.summary || undefined}
             />
           )}
 
