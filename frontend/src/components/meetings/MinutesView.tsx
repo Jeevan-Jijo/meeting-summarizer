@@ -77,64 +77,94 @@ export const MinutesView: React.FC<MinutesViewProps> = ({ meeting }) => {
         </div>
 
         {/* 1. Executive Summary */}
+        {/* 1. Meeting Overview */}
         <section className="space-y-2">
           <h2 className="text-base font-semibold text-slate-900 dark:text-slate-100 border-b border-slate-100 dark:border-slate-800/60 pb-1">
-            1. Executive Summary
+            1. Meeting Overview
           </h2>
           <p className="text-sm leading-relaxed text-slate-700 dark:text-slate-300">
-            {meeting.summary?.executive_summary || 'No executive summary available.'}
+            {meeting.summary?.minutes_of_meeting?.overview || meeting.summary?.executive_summary || 'No meeting overview available.'}
           </p>
         </section>
 
-        {/* 2. Agenda Topics */}
-        {meeting.summary?.agenda_topics && meeting.summary.agenda_topics.length > 0 && (
-          <section className="space-y-2">
-            <h2 className="text-base font-semibold text-slate-900 dark:text-slate-100 border-b border-slate-100 dark:border-slate-800/60 pb-1">
-              2. Agenda & Discussion Topics
-            </h2>
+        {/* 2. Agenda */}
+        <section className="space-y-2">
+          <h2 className="text-base font-semibold text-slate-900 dark:text-slate-100 border-b border-slate-100 dark:border-slate-800/60 pb-1">
+            2. Agenda
+          </h2>
+          {((meeting.summary?.minutes_of_meeting?.agenda && meeting.summary.minutes_of_meeting.agenda.length > 0) || (meeting.summary?.agenda_topics && meeting.summary.agenda_topics.length > 0)) ? (
             <ul className="list-disc list-inside text-sm space-y-1 text-slate-700 dark:text-slate-300">
-              {meeting.summary.agenda_topics.map((t, idx) => (
+              {(meeting.summary?.minutes_of_meeting?.agenda || meeting.summary?.agenda_topics || []).map((t: string, idx: number) => (
                 <li key={idx}>{t}</li>
               ))}
             </ul>
-          </section>
-        )}
+          ) : (
+            <p className="text-xs text-slate-400 italic">No specific agenda items recorded.</p>
+          )}
+        </section>
 
-        {/* 3. Decisions */}
-        {meeting.decisions && meeting.decisions.length > 0 && (
-          <section className="space-y-3">
-            <h2 className="text-base font-semibold text-slate-900 dark:text-slate-100 border-b border-slate-100 dark:border-slate-800/60 pb-1">
-              3. Key Decisions
-            </h2>
+        {/* 3. Discussion */}
+        <section className="space-y-2">
+          <h2 className="text-base font-semibold text-slate-900 dark:text-slate-100 border-b border-slate-100 dark:border-slate-800/60 pb-1">
+            3. Discussion Summary
+          </h2>
+          {meeting.summary?.minutes_of_meeting?.discussion && meeting.summary.minutes_of_meeting.discussion.length > 0 ? (
+            <ul className="list-disc list-inside text-sm space-y-1.5 text-slate-700 dark:text-slate-300">
+              {meeting.summary.minutes_of_meeting.discussion.map((disc: string, idx: number) => (
+                <li key={idx}>{disc}</li>
+              ))}
+            </ul>
+          ) : meeting.key_points && meeting.key_points.length > 0 ? (
+            <ul className="list-disc list-inside text-sm space-y-1.5 text-slate-700 dark:text-slate-300">
+              {meeting.key_points.map((kp) => (
+                <li key={kp.id}>{kp.point}</li>
+              ))}
+            </ul>
+          ) : (
+            <p className="text-xs text-slate-400 italic">No discussion points recorded.</p>
+          )}
+        </section>
+
+        {/* 4. Decisions */}
+        <section className="space-y-3">
+          <h2 className="text-base font-semibold text-slate-900 dark:text-slate-100 border-b border-slate-100 dark:border-slate-800/60 pb-1">
+            4. Decisions Reached
+          </h2>
+          {meeting.decisions && meeting.decisions.length > 0 ? (
             <div className="space-y-2">
               {meeting.decisions.map((dec, idx) => (
                 <div key={dec.id} className="text-sm">
                   <span className="font-semibold text-slate-900 dark:text-slate-100">
-                    3.{idx + 1} {dec.decision}
+                    4.{idx + 1} {dec.decision}
                   </span>
+                  {dec.made_by && <span className="text-xs text-slate-500 ml-2">(Made by: {dec.made_by})</span>}
                   {dec.context && (
-                    <p className="text-xs text-slate-500 pl-4 mt-0.5">Rationale: {dec.context}</p>
+                    <p className="text-xs text-slate-500 pl-4 mt-0.5">Context: {dec.context}</p>
                   )}
                 </div>
               ))}
             </div>
-          </section>
-        )}
+          ) : (
+            <p className="text-sm text-slate-500 italic">No explicit decisions were identified in the meeting.</p>
+          )}
+        </section>
 
-        {/* 4. Action Items Table */}
-        {meeting.action_items && meeting.action_items.length > 0 && (
-          <section className="space-y-3">
-            <h2 className="text-base font-semibold text-slate-900 dark:text-slate-100 border-b border-slate-100 dark:border-slate-800/60 pb-1">
-              4. Action Items & Commitments
-            </h2>
+        {/* 5. Action Items Table */}
+        <section className="space-y-3">
+          <h2 className="text-base font-semibold text-slate-900 dark:text-slate-100 border-b border-slate-100 dark:border-slate-800/60 pb-1">
+            5. Action Items & Commitments
+          </h2>
+          {meeting.action_items && meeting.action_items.length > 0 ? (
             <div className="overflow-x-auto rounded-lg border border-slate-200 dark:border-slate-800">
               <table className="w-full text-xs text-left">
                 <thead className="bg-slate-50 dark:bg-slate-800/60 text-slate-700 dark:text-slate-300 uppercase font-semibold">
                   <tr>
-                    <th className="px-4 py-2.5">Action Item</th>
+                    <th className="px-4 py-2.5">Task Description</th>
                     <th className="px-4 py-2.5">Assignee</th>
+                    <th className="px-4 py-2.5">Domain</th>
                     <th className="px-4 py-2.5">Deadline</th>
                     <th className="px-4 py-2.5">Priority</th>
+                    <th className="px-4 py-2.5">Status</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 dark:divide-slate-800 text-slate-600 dark:text-slate-300">
@@ -144,48 +174,54 @@ export const MinutesView: React.FC<MinutesViewProps> = ({ meeting }) => {
                         {item.description}
                       </td>
                       <td className="px-4 py-2.5">{item.assignee || 'Unassigned'}</td>
-                      <td className="px-4 py-2.5">{item.deadline || 'TBD'}</td>
+                      <td className="px-4 py-2.5">{item.domain || 'Other'}</td>
+                      <td className="px-4 py-2.5">{item.deadline || 'Not specified'}</td>
                       <td className="px-4 py-2.5">{item.priority}</td>
+                      <td className="px-4 py-2.5">{item.status || (item.is_completed ? 'Completed' : 'Pending')}</td>
                     </tr>
                   ))}
                 </tbody>
               </table>
             </div>
-          </section>
-        )}
+          ) : (
+            <p className="text-sm text-slate-500 italic">No actionable tasks were identified.</p>
+          )}
+        </section>
 
-        {/* 5. Deadlines & Dates */}
-        {meeting.important_dates && meeting.important_dates.length > 0 && (
-          <section className="space-y-2">
-            <h2 className="text-base font-semibold text-slate-900 dark:text-slate-100 border-b border-slate-100 dark:border-slate-800/60 pb-1">
-              5. Important Dates & Milestones
-            </h2>
-            <ul className="list-disc list-inside text-sm space-y-1 text-slate-700 dark:text-slate-300">
-              {meeting.important_dates.map((dt) => (
-                <li key={dt.id}>
-                  <strong>{dt.raw_phrase}</strong>
-                  {dt.normalized_date ? ` (${dt.normalized_date})` : ''}: {dt.description}
-                </li>
-              ))}
-            </ul>
-          </section>
-        )}
-
-        {/* 6. Unresolved Questions */}
-        {meeting.unresolved_questions && meeting.unresolved_questions.length > 0 && (
-          <section className="space-y-2">
-            <h2 className="text-base font-semibold text-slate-900 dark:text-slate-100 border-b border-slate-100 dark:border-slate-800/60 pb-1">
-              6. Open & Unresolved Questions
-            </h2>
-            <ul className="list-disc list-inside text-sm space-y-1 text-slate-700 dark:text-slate-300">
+        {/* 6. Open Questions */}
+        <section className="space-y-2">
+          <h2 className="text-base font-semibold text-slate-900 dark:text-slate-100 border-b border-slate-100 dark:border-slate-800/60 pb-1">
+            6. Open & Unresolved Questions
+          </h2>
+          {meeting.unresolved_questions && meeting.unresolved_questions.length > 0 ? (
+            <div className="space-y-2">
               {meeting.unresolved_questions.map((q) => (
-                <li key={q.id}>
-                  {q.question} <span className="text-xs text-slate-500">(Raised by: {q.raised_by})</span>
-                </li>
+                <div key={q.id} className="text-sm space-y-1">
+                  <p className="font-medium text-slate-900 dark:text-slate-100">• Q: {q.question} <span className="text-xs text-slate-400">({q.status || 'Unanswered'})</span></p>
+                  <p className="text-xs text-slate-600 dark:text-slate-400 pl-3">A: {q.answer || 'No answer was identified in the meeting.'}</p>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="text-sm text-slate-500 italic">No unanswered questions were identified.</p>
+          )}
+        </section>
+
+        {/* 7. Takeaways */}
+        <section className="space-y-2">
+          <h2 className="text-base font-semibold text-slate-900 dark:text-slate-100 border-b border-slate-100 dark:border-slate-800/60 pb-1">
+            7. Key Takeaways
+          </h2>
+          {meeting.takeaways && meeting.takeaways.length > 0 ? (
+            <ul className="list-disc list-inside text-sm space-y-1 text-slate-700 dark:text-slate-300">
+              {meeting.takeaways.map((t) => (
+                <li key={t.id}>{t.takeaway}</li>
               ))}
             </ul>
-          </section>
-        )}
+          ) : (
+            <p className="text-xs text-slate-400 italic">No specific takeaways recorded.</p>
+          )}
+        </section>
       </div>
     </div>
   );

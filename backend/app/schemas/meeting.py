@@ -56,6 +56,8 @@ class MeetingSummaryRead(BaseModel):
     meeting_id: int
     executive_summary: str
     agenda_topics: List[str]
+    discussion_topics: List[Any] = []
+    minutes_of_meeting: Optional[Any] = None
     overall_sentiment_estimate: Optional[str] = None
     sentiment_justification: Optional[str] = None
     created_at: datetime.datetime
@@ -65,6 +67,8 @@ class MeetingSummaryRead(BaseModel):
 class MeetingSummaryUpdate(BaseModel):
     executive_summary: Optional[str] = None
     agenda_topics: Optional[List[str]] = None
+    discussion_topics: Optional[List[Any]] = None
+    minutes_of_meeting: Optional[Any] = None
     overall_sentiment_estimate: Optional[str] = None
     sentiment_justification: Optional[str] = None
 
@@ -96,6 +100,7 @@ class DecisionRead(BaseModel):
     decision: str
     context: Optional[str] = None
     impact: Optional[str] = None
+    made_by: Optional[str] = None
     source_segment_ids: List[int]
     source_text: Optional[str] = None
     start_time: Optional[float] = None
@@ -107,6 +112,7 @@ class DecisionUpdate(BaseModel):
     decision: Optional[str] = None
     context: Optional[str] = None
     impact: Optional[str] = None
+    made_by: Optional[str] = None
 
 
 class ActionItemRead(BaseModel):
@@ -118,6 +124,8 @@ class ActionItemRead(BaseModel):
     assignee: str
     deadline: Optional[str] = None
     priority: str
+    domain: str = "Other"
+    status: str = "Pending"
     is_completed: bool
     source_segment_ids: List[int]
     source_text: Optional[str] = None
@@ -131,6 +139,8 @@ class ActionItemUpdate(BaseModel):
     assignee: Optional[str] = None
     deadline: Optional[str] = None
     priority: Optional[str] = None
+    domain: Optional[str] = None
+    status: Optional[str] = None
     is_completed: Optional[bool] = None
 
 
@@ -205,6 +215,8 @@ class UnresolvedQuestionRead(BaseModel):
     id: int
     meeting_id: int
     question: str
+    answer: Optional[str] = None
+    status: str = "Unanswered"
     raised_by: str
     context: Optional[str] = None
     source_segment_ids: List[int]
@@ -216,6 +228,8 @@ class UnresolvedQuestionRead(BaseModel):
 
 class UnresolvedQuestionUpdate(BaseModel):
     question: Optional[str] = None
+    answer: Optional[str] = None
+    status: Optional[str] = None
     raised_by: Optional[str] = None
     context: Optional[str] = None
 

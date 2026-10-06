@@ -403,15 +403,39 @@ export default function MeetingDetailPage() {
             />
           )}
 
-          {/* TAB 3: KEY POINTS */}
+          {/* TAB 3: KEY POINTS & DISCUSSION TOPICS */}
           {activeTab === 'key_points' && (
-            <ExtractionsList
-              meetingId={meeting.id}
-              type="key_points"
-              keyPoints={meeting.key_points}
-              onSeek={handleSeek}
-              onRefresh={loadMeeting}
-            />
+            <div className="space-y-6">
+              {meeting.summary?.discussion_topics && meeting.summary.discussion_topics.length > 0 && (
+                <Card className="space-y-3">
+                  <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100 flex items-center gap-2">
+                    <FileText className="w-4 h-4 text-teal-500" /> Discussion Topics & Agenda
+                  </h3>
+                  <div className="space-y-3">
+                    {meeting.summary.discussion_topics.map((top: any, idx: number) => (
+                      <div key={idx} className="p-3.5 rounded-xl border border-slate-200/60 dark:border-slate-800/60 bg-slate-50/50 dark:bg-slate-800/30 space-y-1">
+                        <div className="flex items-center justify-between">
+                          <h4 className="text-xs font-semibold text-slate-900 dark:text-slate-100">
+                            {idx + 1}. {top.title}
+                          </h4>
+                          {top.timestamp && (
+                            <span className="font-mono text-[11px] text-slate-400">{top.timestamp}</span>
+                          )}
+                        </div>
+                        <p className="text-xs text-slate-600 dark:text-slate-300">{top.summary}</p>
+                      </div>
+                    ))}
+                  </div>
+                </Card>
+              )}
+              <ExtractionsList
+                meetingId={meeting.id}
+                type="key_points"
+                keyPoints={meeting.key_points}
+                onSeek={handleSeek}
+                onRefresh={loadMeeting}
+              />
+            </div>
           )}
 
           {/* TAB 4: DECISIONS */}

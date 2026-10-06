@@ -62,6 +62,83 @@ class Diarizer:
             self.pipeline = None
             return None
 
+    def _fallback_diarize(self, audio_path: str) -> List[Dict[str, Any]]:
+        """
+        Local acoustic feature clustering diarization fallback when pyannote is unavailable.
+        Uses wave + numpy + sklearn AgglomerativeClustering with spectral subband analysis.
+        """
+        try:
+            import wave
+            import numpy as np
+            from sklearn.cluster import AgglomerativeClustering
+            from sklearn.preprocessing import StandardScaler
+
+            logger.info(f"Running acoustic feature diarization fallback on {audio_path}...")
+            with wave.open(audio_path, 'rb') as wf:
+                sr = wf.getframerate()
+                n_channels = wf.getnchannels()
+                frames = wf.readframes(wf.getnframes())
+                raw_samples = np.frombuffer(frames, dtype=np.int16).astype(np.float32)
+                if n_channels > 1:
+                    raw_samples = raw_samples[::n_channels]
+
+            if len(raw_samples) == 0:
+                return []
+
+            window_size = int(sr * 1.5)
+            hop_size = int(sr * 0.75)
+            total_samples = len(raw_samples)
+            
+            windows = []
+            timestamps = []
+            
+            for start in range(0, total_samples - window_size + 1, hop_size):
+                chunk = raw_samples[start:start + window_size]
+                rms = np.sqrt(np.mean(chunk**2))
+                if rms < 100:  # Ignore silence
+                    continue
+                
+                fft_mag = np.abs(np.fft.rfft(chunk * np.hanning(len(chunk))))
+                if len(fft_mag) == 0:
+                    continue
+                
+                subband_len = max(1, len(fft_mag) // 16)
+                feats = [np.log1p(np.mean(fft_mag[i*subband_len:(i+1)*subband_len])) for i in range(16)]
+                zcr = np.mean(np.abs(np.diff(np.sign(chunk))))
+                feats.append(zcr)
+                feats.append(np.log1p(rms))
+                
+                windows.append(feats)
+                timestamps.append((start / sr, (start + window_size) / sr))
+
+            if len(windows) < 4:
+                return []
+
+            X = StandardScaler().fit_transform(np.array(windows))
+            n_clusters = min(4, max(2, len(windows) // 40))
+            clustering = AgglomerativeClustering(n_clusters=n_clusters, metric='cosine', linkage='average')
+            labels = clustering.fit_predict(X)
+            
+            turns = []
+            current_speaker = f"SPEAKER_{labels[0]:02d}"
+            turn_start, turn_end = timestamps[0]
+            
+            for (t_start, t_end), label in zip(timestamps[1:], labels[1:]):
+                spk = f"SPEAKER_{label:02d}"
+                if spk == current_speaker and t_start <= turn_end + 1.0:
+                    turn_end = t_end
+                else:
+                    turns.append({"start": round(turn_start, 2), "end": round(turn_end, 2), "speaker": current_speaker})
+                    current_speaker = spk
+                    turn_start, turn_end = t_start, t_end
+            
+            turns.append({"start": round(turn_start, 2), "end": round(turn_end, 2), "speaker": current_speaker})
+            logger.info(f"Acoustic fallback diarization complete: found {len(turns)} turns across {len(set(t['speaker'] for t in turns))} speakers.")
+            return turns
+        except Exception as e:
+            logger.error(f"Fallback diarization error: {e}")
+            return []
+
     def diarize(self, audio_path: str) -> Tuple[List[Dict[str, Any]], bool, str]:
         """
         Diarize audio file.
@@ -71,6 +148,9 @@ class Diarizer:
         pipeline = self.load_pipeline()
         
         if pipeline is None:
+            turns = self._fallback_diarize(audio_path)
+            if turns:
+                return turns, True, "Speaker diarization completed via acoustic clustering fallback"
             return [], False, "Diarization skipped (HF_TOKEN not set or model access not granted)."
             
         try:
@@ -88,7 +168,10 @@ class Diarizer:
             logger.info(f"Diarization complete: found {len(turns)} turns across {len(set(t['speaker'] for t in turns))} speakers.")
             return turns, True, "Speaker diarization completed successfully"
         except Exception as e:
-            logger.error(f"Error during diarization inference: {e}")
+            logger.error(f"Error during pyannote diarization inference: {e}")
+            turns = self._fallback_diarize(audio_path)
+            if turns:
+                return turns, True, "Speaker diarization completed via acoustic clustering fallback after pyannote error"
             return [], False, f"Diarization error: {str(e)}"
 
     def unload(self):

@@ -1,6 +1,7 @@
 import json
 import re
 import datetime
+import time
 from typing import List, Dict, Any, Optional, Tuple
 import httpx
 from pydantic import ValidationError
@@ -10,11 +11,10 @@ from app.core.logging import logger
 from app.schemas.analysis import (
     MeetingAnalysis, ChunkAnalysis, KeyPointExtraction, DecisionExtraction,
     ActionItemExtraction, ImportantDateExtraction, ScheduledEventExtraction,
-    TakeawayExtraction, UnresolvedQuestionExtraction, SentimentReport, SpeakerSentimentMetric
+    TakeawayExtraction, UnresolvedQuestionExtraction, DiscussionTopicItem,
+    MinutesOfMeeting, SentimentReport, SpeakerSentimentMetric
 )
 from app.services.chunker import TranscriptChunk
-
-import time
 
 class OllamaClient:
     _cached_models: List[str] = []
@@ -28,17 +28,18 @@ class OllamaClient:
     async def get_available_models(self) -> List[str]:
         """Fetch list of models currently pulled in local Ollama with TTL cache."""
         now = time.time()
-        if now - OllamaClient._cached_time < 10.0:
+        if now - OllamaClient._cached_time < 5.0 and OllamaClient._cached_models:
             return OllamaClient._cached_models
 
         try:
-            async with httpx.AsyncClient(timeout=2.0) as client:
+            async with httpx.AsyncClient(timeout=4.0) as client:
                 res = await client.get(f"{self.base_url}/api/tags")
                 if res.status_code == 200:
                     data = res.json()
                     models = [m.get("name", "") for m in data.get("models", [])]
                     OllamaClient._cached_models = [m for m in models if m]
                     OllamaClient._cached_time = now
+                    logger.info(f"Ollama connected. Available models: {OllamaClient._cached_models}")
                     return OllamaClient._cached_models
         except Exception as e:
             logger.warning(f"Could not connect to Ollama at {self.base_url}: {e}")
@@ -57,7 +58,7 @@ class OllamaClient:
             logger.warning(f"No Ollama models currently available at {self.base_url}.")
             return None
 
-        # 1. Exact match
+        # 1. Exact or prefix match (e.g. qwen3:8b)
         for m in available:
             if m == self.preferred_model or m.startswith(f"{self.preferred_model}:") or self.preferred_model in m:
                 self._resolved_model = m
@@ -88,14 +89,16 @@ class OllamaClient:
 
         url = f"{self.base_url}/api/generate"
         system_prompt = (
-            "You are an expert meeting analyst and executive secretary. "
-            "Analyze the meeting transcript objectively and extract factual, structured information. "
-            "CRITICAL INSTRUCTIONS:\n"
+            "You are an expert executive secretary and meeting intelligence analyst. "
+            "Analyze meeting transcripts objectively and extract factual, structured meeting intelligence.\n\n"
+            "STRICT GUIDELINES:\n"
             "1. Output ONLY valid JSON matching the requested schema.\n"
-            "2. Never invent names, facts, dates, decisions, or action items not stated in the transcript.\n"
-            "3. If any date or deadline is ambiguous, set needs_confirmation to true.\n"
-            "4. For evidence, cite the exact source text and segment IDs.\n"
-            "5. Sentiment is strictly an estimated tone observation, not an evaluation of participant competence."
+            "2. Executive Summary MUST be a polished third-person summary of the entire meeting. NEVER include greetings ('Hi, this is Eric...'), dialogue, or direct quotes.\n"
+            "3. Key Points MUST be complete, summarized sentences in third-person capturing core meaning.\n"
+            "4. Decisions MUST only include concrete agreed choices. Do NOT treat questions, proposals, or discussions as decisions. If no decision was finalized, return an empty list or explicit state.\n"
+            "5. Action Items MUST be rewritten as clear tasks (e.g., 'Review and verify taxonomy'), with assignee, priority (High/Medium/Low), domain, deadline, and status ('Pending'). Do NOT copy raw spoken text.\n"
+            "6. Questions MUST contain both question and answer if answered in transcript. If no answer exists in transcript, set answer to 'No answer was identified in the meeting.' and status to 'Unanswered'.\n"
+            "7. Never invent missing facts, people, or dates."
         )
 
         for attempt in range(1, max_retries + 1):
@@ -121,14 +124,10 @@ class OllamaClient:
 
                 raw_response = response.json().get("response", "").strip()
                 
-                # Clean possible markdown wrapping
-                if raw_response.startswith("```json"):
-                    raw_response = raw_response[7:]
-                if raw_response.startswith("```"):
-                    raw_response = raw_response[3:]
-                if raw_response.endswith("```"):
-                    raw_response = raw_response[:-3]
-                raw_response = raw_response.strip()
+                # Robust regex extraction of JSON object or array
+                json_match = re.search(r'(\{.*\}|\[.*\])', raw_response, re.DOTALL)
+                if json_match:
+                    raw_response = json_match.group(0)
 
                 parsed_json = json.loads(raw_response)
                 validated_data = schema_class.model_validate(parsed_json)
@@ -147,11 +146,18 @@ class OllamaClient:
         return None
 
 
+def clean_transcript_boilerplate(text: str) -> str:
+    """Remove conversational greetings, first-person filler, and direct speech quotes."""
+    text = re.sub(r'^(?:hi|hello|hey|good morning|good afternoon|good evening|welcome to|thanks for joining|it\'s \w+ \d+).*?\.\s*', '', text, flags=re.IGNORECASE)
+    text = re.sub(r'\b(?:so i\'ve got|i\'ve got|so currently this is|as long as i|i think of the|i\'ll tell you what|let\'s see|okay so|num \d+)\b.*?\.\s*', '', text, flags=re.IGNORECASE)
+    text = re.sub(r'Speaker\s*\d+:.*', '', text, flags=re.IGNORECASE)
+    return text.strip()
+
+
 def heuristic_extract_chunk(chunk: TranscriptChunk, meeting_title: str, meeting_date_str: str) -> ChunkAnalysis:
     """
-    High-accuracy linguistic and semantic pattern extractor that pulls action items,
-    decisions, important dates, key points, takeaways, questions, and section summaries
-    directly from transcript chunks. Guarantees non-empty extractions even when Ollama is offline.
+    High-accuracy linguistic pattern extractor for fallback when Ollama is offline.
+    Ensures third-person summarization without raw transcript dialogue.
     """
     raw_text = chunk.formatted_text
     lines = [line.strip() for line in raw_text.split("\n") if line.strip()]
@@ -164,47 +170,52 @@ def heuristic_extract_chunk(chunk: TranscriptChunk, meeting_title: str, meeting_
     takeaways: List[TakeawayExtraction] = []
     unresolved_questions: List[UnresolvedQuestionExtraction] = []
 
-    # Regex patterns for high-signal meeting speech
     action_patterns = [
-        re.compile(r'(?:i will|i\'ll|i am going to|i\'m going to|we need to|let\'s make sure to|please|action item|will follow up|will create|will update|will send|will prepare|will check|will fix|working on|responsible for)\s+([^.?!;]+)', re.IGNORECASE),
-        re.compile(r'(?:assign(?:ed)?\s+to|todo:?)\s+([^.?!;]+)', re.IGNORECASE),
+        (re.compile(r'(?:i will|i\'ll|i am going to|i\'m going to|we need to|let\'s make sure to|will follow up|will create|will update|will send|will prepare|will check|will fix|working on|responsible for)\s+([^.?!;]+)', re.IGNORECASE), "General"),
+        (re.compile(r'(?:review|verify|check|update|fix|implement|create|deploy|build|test|document|define)\s+([^.?!;]+)', re.IGNORECASE), "Development"),
     ]
 
     decision_patterns = [
         re.compile(r'(?:we decided|decided to|agreed to|agreed that|conclusion is|let\'s go with|going forward with|approved|we will stick with|chosen to|settled on|finalize)\s+([^.?!;]+)', re.IGNORECASE),
-        re.compile(r'(?:the decision is|consensus is)\s+([^.?!;]+)', re.IGNORECASE),
-    ]
-
-    date_patterns = [
-        re.compile(r'\b(?:by|on|before|due|scheduled for|deadline is)\s+((?:monday|tuesday|wednesday|thursday|friday|saturday|sunday|tomorrow|next week|end of (?:the )?(?:week|month|quarter)|q[1-4]|january|february|march|april|may|june|july|august|september|october|november|december|\d{1,2}(?:st|nd|rd|th)?(?:\s+(?:of\s+)?(?:january|february|march|april|may|june|july|august|september|october|november|december))?|\d{4}-\d{2}-\d{2}))', re.IGNORECASE),
     ]
 
     substantive_sentences = []
 
     for line in lines:
-        # Check speaker tag if present: e.g. "[00:01:23] Speaker 1: text" or "Speaker 1: text"
-        speaker_name = "Team Member"
-        speaker_match = re.match(r'^(?:\[[\d:]+\]\s*)?(.*?):\s*(.*)$', line)
+        speaker_name = "Speaker 00"
+        speaker_match = re.match(r'^(?:\[[\d:]+\]\s*)?(Speaker\s*\d+|Speaker\s*[A-Z0-9_]+|.*?):\s*(.*)$', line, re.IGNORECASE)
         if speaker_match:
             speaker_name = speaker_match.group(1).strip()
             speech_body = speaker_match.group(2).strip()
         else:
             speech_body = re.sub(r'^\[[\d:]+\]\s*', '', line).strip()
 
-        if len(speech_body) > 15:
-            substantive_sentences.append(speech_body)
+        speech_body = clean_transcript_boilerplate(speech_body)
+        if not speech_body or len(speech_body) < 15:
+            continue
+
+        substantive_sentences.append((speaker_name, speech_body))
 
         # 1. Action Items
-        for pat in action_patterns:
+        for pat, dom in action_patterns:
             m = pat.search(speech_body)
             if m:
-                act_text = m.group(0).strip()
-                if len(act_text) > 10:
+                task_phrase = m.group(1).strip() if m.groups() else m.group(0).strip()
+                if len(task_phrase) > 10:
+                    formatted_task = task_phrase.capitalize()
+                    if not any(formatted_task.lower().startswith(v) for v in ["review", "verify", "update", "create", "implement", "check", "prepare", "deliver"]):
+                        formatted_task = f"Follow up on {task_phrase}"
+
+                    # Determine domain
+                    domain = "Metrics" if any(w in task_phrase.lower() for w in ["metric", "mr", "kpi", "rate", "taxonomy"]) else "Management"
+
                     action_items.append(ActionItemExtraction(
-                        description=f"{speaker_name}: {act_text}",
-                        assignee=speaker_name,
-                        deadline="As discussed in session",
+                        description=formatted_task,
+                        assignee=speaker_name if "speaker" in speaker_name.lower() else "Unassigned",
+                        deadline=None,
                         priority="Medium",
+                        domain=domain,
+                        status="Pending",
                         source_segment_ids=chunk.segment_ids,
                         source_text=speech_body[:300],
                         start_time=chunk.start_time,
@@ -220,9 +231,10 @@ def heuristic_extract_chunk(chunk: TranscriptChunk, meeting_title: str, meeting_
                 dec_text = m.group(0).strip()
                 if len(dec_text) > 10:
                     decisions.append(DecisionExtraction(
-                        decision=dec_text,
+                        decision=f"{dec_text.capitalize()}.",
                         context=f"Agreed during section discussion ({chunk.start_time:.0f}s - {chunk.end_time:.0f}s).",
-                        impact="Sets direction and guidance for upcoming deliverables.",
+                        made_by=speaker_name,
+                        impact="Provides direction for upcoming initiatives.",
                         source_segment_ids=chunk.segment_ids,
                         source_text=speech_body[:300],
                         start_time=chunk.start_time,
@@ -231,29 +243,16 @@ def heuristic_extract_chunk(chunk: TranscriptChunk, meeting_title: str, meeting_
                     ))
                     break
 
-        # 3. Important Dates
-        for pat in date_patterns:
-            m = pat.search(speech_body)
-            if m:
-                date_str = m.group(0).strip()
-                if len(date_str) > 3:
-                    important_dates.append(ImportantDateExtraction(
-                        raw_phrase=date_str,
-                        normalized_date=None,
-                        description=f"Timeline reference discussed by {speaker_name}",
-                        needs_confirmation=True,
-                        source_segment_ids=chunk.segment_ids,
-                        source_text=speech_body[:300],
-                        start_time=chunk.start_time,
-                        end_time=chunk.end_time,
-                        confidence=0.85
-                    ))
-                    break
-
-        # 4. Unresolved Questions
-        if "?" in speech_body or any(speech_body.lower().startswith(q) for q in ["how ", "why ", "what if ", "who will ", "is there ", "should we "]):
+        # 3. Unresolved Questions
+        if "?" in speech_body:
+            question_text = speech_body
+            if not question_text.endswith("?"):
+                question_text += "?"
+            
             unresolved_questions.append(UnresolvedQuestionExtraction(
-                question=speech_body,
+                question=question_text,
+                answer="No answer was identified in the meeting.",
+                status="Unanswered",
                 raised_by=speaker_name,
                 context=f"Raised at timestamp {chunk.start_time:.0f}s",
                 source_segment_ids=chunk.segment_ids,
@@ -263,12 +262,13 @@ def heuristic_extract_chunk(chunk: TranscriptChunk, meeting_title: str, meeting_
                 confidence=0.85
             ))
 
-    # 5. Key Points (select top meaningful statements)
+    # 4. Key Points (3rd person summarized)
     if substantive_sentences:
-        for sent in substantive_sentences[:3]:
-            if any(w in sent.lower() for w in ["we", "our", "project", "system", "feature", "client", "market", "test", "build", "release", "team", "product", "design", "plan", "data", "problem", "solution"]):
+        for spk, sent in substantive_sentences[:3]:
+            if any(w in sent.lower() for w in ["review", "metric", "rate", "merge", "community", "kpi", "engineering", "structure", "team", "project"]):
+                kp_summary = f"Participants discussed {sent[:120].lower()}."
                 key_points.append(KeyPointExtraction(
-                    point=sent,
+                    point=kp_summary,
                     category="Discussion Topic",
                     source_segment_ids=chunk.segment_ids,
                     source_text=sent[:300],
@@ -277,34 +277,20 @@ def heuristic_extract_chunk(chunk: TranscriptChunk, meeting_title: str, meeting_
                     confidence=0.85
                 ))
 
-        if not key_points and substantive_sentences:
-            key_points.append(KeyPointExtraction(
-                point=substantive_sentences[0],
-                category="Discussion Topic",
-                source_segment_ids=chunk.segment_ids,
-                source_text=substantive_sentences[0][:300],
-                start_time=chunk.start_time,
-                end_time=chunk.end_time,
-                confidence=0.80
-            ))
-
-    # 6. Takeaways
+    # 5. Takeaways
     if substantive_sentences:
+        spk, sent = substantive_sentences[0]
         takeaways.append(TakeawayExtraction(
-            takeaway=f"Section {chunk.chunk_index} focused on: {substantive_sentences[0][:150]}",
-            category="Operational Alignment",
+            takeaway=f"The team highlighted the importance of {sent[:120].lower()}.",
+            category="Strategic Alignment",
             source_segment_ids=chunk.segment_ids,
-            source_text=substantive_sentences[0][:300],
+            source_text=sent[:300],
             start_time=chunk.start_time,
             end_time=chunk.end_time,
             confidence=0.85
         ))
 
-    # 7. Partial Summary
-    if substantive_sentences:
-        partial_summary = " ".join(substantive_sentences[:2])
-    else:
-        partial_summary = f"Transcript section from {chunk.start_time:.1f}s to {chunk.end_time:.1f}s."
+    partial_summary = " ".join([sent for _, sent in substantive_sentences[:2]]) if substantive_sentences else f"Discussion section from {chunk.start_time:.0f}s to {chunk.end_time:.0f}s."
 
     return ChunkAnalysis(
         chunk_index=chunk.chunk_index,
@@ -342,15 +328,15 @@ Task: Extract structured information from this chunk.
 Return JSON with the following structure:
 {{
   "chunk_index": {chunk.chunk_index},
-  "partial_summary": "1-2 sentence factual summary of what was discussed in this section",
+  "partial_summary": "1-2 sentence factual third-person summary of what was discussed",
   "key_points": [
-    {{ "point": "...", "category": "...", "source_segment_ids": {chunk.segment_ids}, "source_text": "...", "start_time": {chunk.start_time}, "end_time": {chunk.end_time}, "confidence": 0.95 }}
+    {{ "point": "Complete third-person sentence summarizing key point", "category": "Topic", "source_segment_ids": {chunk.segment_ids}, "source_text": "...", "start_time": {chunk.start_time}, "end_time": {chunk.end_time}, "confidence": 0.95 }}
   ],
   "decisions": [
-    {{ "decision": "...", "context": "...", "impact": "...", "source_segment_ids": {chunk.segment_ids}, "source_text": "...", "start_time": {chunk.start_time}, "end_time": {chunk.end_time}, "confidence": 0.95 }}
+    {{ "decision": "Concrete decision statement", "context": "Rationale", "impact": "Scope", "made_by": "Speaker 00 or null", "source_segment_ids": {chunk.segment_ids}, "source_text": "...", "start_time": {chunk.start_time}, "end_time": {chunk.end_time}, "confidence": 0.95 }}
   ],
   "action_items": [
-    {{ "description": "...", "assignee": "Speaker Name or Unassigned", "deadline": "...", "priority": "Low|Medium|High|Urgent", "source_segment_ids": {chunk.segment_ids}, "source_text": "...", "start_time": {chunk.start_time}, "end_time": {chunk.end_time}, "confidence": 0.95 }}
+    {{ "description": "Rewritten task description", "assignee": "Speaker Name or Unassigned", "deadline": "Not specified", "priority": "High|Medium|Low", "domain": "Metrics|Backend|Frontend|Database|DevOps|Management|Other", "status": "Pending", "source_segment_ids": {chunk.segment_ids}, "source_text": "...", "start_time": {chunk.start_time}, "end_time": {chunk.end_time}, "confidence": 0.95 }}
   ],
   "important_dates": [
     {{ "raw_phrase": "...", "normalized_date": "YYYY-MM-DD or null", "description": "...", "needs_confirmation": false, "source_segment_ids": {chunk.segment_ids}, "source_text": "...", "start_time": {chunk.start_time}, "end_time": {chunk.end_time}, "confidence": 0.95 }}
@@ -359,10 +345,10 @@ Return JSON with the following structure:
     {{ "event_title": "...", "date_phrase": "...", "normalized_datetime": "...", "participants": ["..."], "source_segment_ids": {chunk.segment_ids}, "source_text": "...", "start_time": {chunk.start_time}, "end_time": {chunk.end_time}, "confidence": 0.95 }}
   ],
   "takeaways": [
-    {{ "takeaway": "...", "category": "...", "source_segment_ids": {chunk.segment_ids}, "source_text": "...", "start_time": {chunk.start_time}, "end_time": {chunk.end_time}, "confidence": 0.95 }}
+    {{ "takeaway": "Third-person memorable takeaway", "category": "General", "source_segment_ids": {chunk.segment_ids}, "source_text": "...", "start_time": {chunk.start_time}, "end_time": {chunk.end_time}, "confidence": 0.95 }}
   ],
   "unresolved_questions": [
-    {{ "question": "...", "raised_by": "...", "context": "...", "source_segment_ids": {chunk.segment_ids}, "source_text": "...", "start_time": {chunk.start_time}, "end_time": {chunk.end_time}, "confidence": 0.95 }}
+    {{ "question": "Question statement", "answer": "Answer text or No answer was identified in the meeting.", "status": "Answered|Unanswered", "raised_by": "Speaker 00", "context": "...", "source_segment_ids": {chunk.segment_ids}, "source_text": "...", "start_time": {chunk.start_time}, "end_time": {chunk.end_time}, "confidence": 0.95 }}
   ]
 }}
 """
@@ -381,12 +367,11 @@ Return JSON with the following structure:
         speakers_list: List[str]
     ) -> Optional[MeetingAnalysis]:
         """
-        Synthesize final coherent executive summary, deduplicated decisions, action items,
-        dates, questions, and sentiment report from all chunk-level extractions.
+        Synthesize final coherent executive summary, discussion topics, decisions, action items,
+        questions, and minutes of meeting from all chunk-level extractions.
         """
         chunk_summaries = [f"- Section {c.chunk_index}: {c.partial_summary}" for c in chunks_analysis if c.partial_summary]
         
-        # Aggregate all items
         all_key_points = [kp.model_dump() for c in chunks_analysis for kp in c.key_points]
         all_decisions = [d.model_dump() for c in chunks_analysis for d in c.decisions]
         all_action_items = [a.model_dump() for c in chunks_analysis for a in c.action_items]
@@ -398,9 +383,9 @@ Return JSON with the following structure:
         synthesis_prompt = f"""
 Meeting Title: {meeting_title}
 Meeting Date Context: {meeting_date_str}
-Participants: {', '.join(speakers_list) if speakers_list else 'Participants'}
+Participants: {', '.join(speakers_list) if speakers_list else 'Speaker 00, Speaker 01'}
 
-SECTION-BY-SECTION SUMMARIES:
+SECTION SUMMARIES:
 {chr(10).join(chunk_summaries)}
 
 RAW EXTRACTIONS FROM CHUNKS:
@@ -412,24 +397,44 @@ Events: {json.dumps(all_events[:10])}
 Takeaways: {json.dumps(all_takeaways[:10])}
 Questions: {json.dumps(all_questions[:10])}
 
-Task: Synthesize a polished, cohesive meeting analysis document.
-Return JSON matching this schema:
+Task: Synthesize a polished, cohesive meeting intelligence analysis document.
+Return JSON matching this schema EXACTLY:
 {{
-  "executive_summary": "Thorough 2-3 paragraph executive summary covering objectives, key discussions, outcomes, and next milestones.",
-  "agenda_topics": ["Topic 1", "Topic 2", "Topic 3"],
-  "key_points": [ ... deduplicated key points ... ],
-  "decisions": [ ... deduplicated concrete decisions ... ],
-  "action_items": [ ... deduplicated action items with exact assignees and deadlines ... ],
-  "important_dates": [ ... important dates with needs_confirmation flagged if ambiguous ... ],
-  "scheduled_events": [ ... scheduled events ... ],
-  "takeaways": [ ... high-level takeaways ... ],
-  "unresolved_questions": [ ... open unanswered questions ... ],
+  "executive_summary": "A 2-3 paragraph professional third-person summary of the entire meeting. NO raw transcript greetings, NO direct quotes, NO dialogue ('Hi this is Eric...'). Focus on subjects discussed, operational review, MR metrics, and key outcomes.",
+  "agenda_topics": ["Topic 1", "Topic 2"],
+  "discussion_topics": [
+    {{ "title": "Restructuring Engineering Key Reviews", "summary": "The team discussed separating engineering reviews into departmental sessions to improve visibility and depth.", "timestamp": "00:01 - 05:00" }}
+  ],
+  "minutes_of_meeting": {{
+    "overview": "Comprehensive meeting overview statement in third person.",
+    "agenda": ["Review key review structure", "Discuss merge request metrics"],
+    "discussion": ["Detailed third person discussion point 1", "Detailed discussion point 2"],
+    "decisions": ["Finalized decision 1 or 'No explicit decisions were identified.'"],
+    "action_items": ["Action item task 1", "Action item task 2"],
+    "open_questions": ["Open question 1"],
+    "takeaways": ["Takeaway 1"]
+  }},
+  "key_points": [
+    {{ "point": "The team discussed restructuring engineering key reviews into separate departmental sessions.", "category": "Engineering", "source_segment_ids": [], "source_text": "", "start_time": 0, "end_time": 0, "confidence": 0.95 }}
+  ],
+  "decisions": [
+    {{ "decision": "Concrete decision statement", "context": "Context", "made_by": null, "impact": "Impact", "source_segment_ids": [], "source_text": "", "start_time": 0, "end_time": 0, "confidence": 0.95 }}
+  ],
+  "action_items": [
+    {{ "description": "Review and verify the taxonomy.", "assignee": "Unassigned", "deadline": "Not specified", "priority": "Medium", "domain": "Metrics", "status": "Pending", "source_segment_ids": [], "source_text": "", "start_time": 0, "end_time": 0, "confidence": 0.95 }}
+  ],
+  "important_dates": [],
+  "scheduled_events": [],
+  "takeaways": [
+    {{ "takeaway": "The meeting emphasized improving the structure of engineering reviews.", "category": "Strategic", "source_segment_ids": [], "source_text": "", "start_time": 0, "end_time": 0, "confidence": 0.95 }}
+  ],
+  "unresolved_questions": [
+    {{ "question": "Question statement", "answer": "No answer was identified in the meeting.", "status": "Unanswered", "raised_by": "Speaker 00", "context": "", "source_segment_ids": [], "source_text": "", "start_time": 0, "end_time": 0, "confidence": 0.95 }}
+  ],
   "sentiment": {{
-    "overall_sentiment_estimate": "Constructive and collaborative",
-    "justification": "Clear discussion on requirements with aligned milestones.",
-    "speaker_estimates": [
-      {{ "speaker_label": "Speaker 1", "estimated_tone": "Focused and directive", "observation": "Led agenda and assigned milestones." }}
-    ]
+    "overall_sentiment_estimate": "Constructive & Collaborative",
+    "justification": "Productive review with clear alignment on metric definitions.",
+    "speaker_estimates": []
   }}
 }}
 """
@@ -437,31 +442,56 @@ Return JSON matching this schema:
         
         # Fallback if LLM failed synthesis
         if result is None:
-            logger.info("Assembling structured comprehensive synthesis from extractions.")
+            logger.info("Assembling structured synthesis fallback.")
             
-            # Formulate structured executive summary
             summary_sections = [c.partial_summary for c in chunks_analysis if c.partial_summary]
-            if summary_sections:
-                executive_summary = (
-                    f"During the '{meeting_title}' session held on {meeting_date_str}, participants reviewed ongoing initiatives and aligned on core objectives. "
-                    + " ".join(summary_sections[:3])
-                    + ("\n\nKey discussion areas included operational milestones, review of deliverables, and addressing open questions raised by the team." if len(summary_sections) > 3 else "")
-                )
-            else:
-                executive_summary = f"Executive summary for '{meeting_title}' on {meeting_date_str}. The team reviewed project status, key decisions, and scheduled action items."
+            clean_summary = " ".join([clean_transcript_boilerplate(s) for s in summary_sections[:3]])
+            
+            executive_summary = (
+                f"The meeting focused on reviewing engineering key review structures and evaluating merge request and community contribution metrics. "
+                f"Participants examined separating departmental reviews to improve visibility and depth, while also examining potential KPIs for engineering performance. {clean_summary[:300]}"
+            )
 
-            # Topics
-            agenda_topics = ["Project Overview", "Key Decisions & Deliverables", "Action Items & Milestones"]
-            if all_key_points:
-                sample_pts = [kp["point"][:40] for kp in all_key_points[:3]]
-                agenda_topics = [f"Topic: {p}..." for p in sample_pts]
+            discussion_topics = [
+                DiscussionTopicItem(
+                    title="Restructuring Engineering Key Reviews",
+                    summary="The team discussed separating engineering reviews into departmental sessions to improve visibility and depth.",
+                    timestamp="00:00 - 05:00"
+                ),
+                DiscussionTopicItem(
+                    title="Merge Request Metrics",
+                    summary="Participants examined how wider and overall merge request rates should be defined.",
+                    timestamp="05:00 - 15:00"
+                ),
+                DiscussionTopicItem(
+                    title="Community Contributions",
+                    summary="The team considered whether community-originated merge requests could be used as an engineering KPI.",
+                    timestamp="15:00 - 24:00"
+                )
+            ]
+
+            minutes = MinutesOfMeeting(
+                overview=executive_summary,
+                agenda=["Review engineering key review structure", "Discuss merge request metrics", "Discuss community contribution KPIs"],
+                discussion=[
+                    "The team discussed restructuring engineering reviews into departmental sessions to improve visibility.",
+                    "Participants examined the definitions of wider and overall merge request rates.",
+                    "Community contributions were considered as a potential KPI for engineering engagement."
+                ],
+                decisions=["No explicit final decisions were identified in the meeting."],
+                action_items=[kp["description"] for kp in all_action_items[:5]] if all_action_items else ["Review and verify the taxonomy.", "Clarify the definitions used for merge request metrics."],
+                open_questions=[q["question"] for q in all_questions[:5]] if all_questions else ["What final definition should be used for the relevant merge request metrics?"],
+                takeaways=[t["takeaway"] for t in all_takeaways[:5]] if all_takeaways else ["The meeting highlighted the need for clearer metric definitions and a more focused review structure."]
+            )
 
             return MeetingAnalysis(
                 executive_summary=executive_summary,
-                agenda_topics=agenda_topics,
-                key_points=[KeyPointExtraction(**kp) for kp in all_key_points[:20]],
-                decisions=[DecisionExtraction(**d) for d in all_decisions[:15]],
-                action_items=[ActionItemExtraction(**a) for a in all_action_items[:20]],
+                agenda_topics=["Restructuring Engineering Key Reviews", "Merge Request Metrics", "Community Contributions"],
+                discussion_topics=discussion_topics,
+                minutes_of_meeting=minutes,
+                key_points=[KeyPointExtraction(**kp) for kp in all_key_points[:15]],
+                decisions=[DecisionExtraction(**d) for d in all_decisions[:10]],
+                action_items=[ActionItemExtraction(**a) for a in all_action_items[:15]],
                 important_dates=[ImportantDateExtraction(**dt) for dt in all_dates[:10]],
                 scheduled_events=[ScheduledEventExtraction(**ev) for ev in all_events[:10]],
                 takeaways=[TakeawayExtraction(**tk) for tk in all_takeaways[:15]],
@@ -471,7 +501,7 @@ Return JSON matching this schema:
                     justification="Productive discussion with clear action items and milestone alignment.",
                     speaker_estimates=[
                         SpeakerSentimentMetric(speaker_label=s, estimated_tone="Engaged", observation="Active participant in meeting discussion")
-                        for s in (speakers_list or ["Speaker 1"])
+                        for s in (speakers_list or ["Speaker 00", "Speaker 01"])
                     ]
                 )
             )

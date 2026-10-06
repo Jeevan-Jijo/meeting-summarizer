@@ -83,7 +83,7 @@ export const ExtractionsList: React.FC<ExtractionsListProps> = ({
     return (
       <div className="space-y-3">
         {actionItems.length === 0 ? (
-          <div className="p-8 text-center text-slate-400 text-sm">No action items found in this meeting.</div>
+          <div className="p-8 text-center text-slate-400 text-sm">No actionable tasks were identified.</div>
         ) : (
           actionItems.map((item) => (
             <div
@@ -119,16 +119,24 @@ export const ExtractionsList: React.FC<ExtractionsListProps> = ({
                         <User className="w-3 h-3 text-slate-400" /> {item.assignee || 'Unassigned'}
                       </span>
 
+                      {/* Domain */}
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-teal-500/10 text-teal-400 border border-teal-500/20 font-medium text-[11px]">
+                        {item.domain || 'Other'}
+                      </span>
+
                       {/* Deadline */}
-                      {item.deadline && (
-                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300">
-                          <Clock className="w-3 h-3 text-slate-400" /> {item.deadline}
-                        </span>
-                      )}
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300">
+                        <Clock className="w-3 h-3 text-slate-400" /> {item.deadline || 'Not specified'}
+                      </span>
 
                       {/* Priority */}
                       <span className={cn('px-2 py-0.5 rounded border text-[11px] font-semibold', getPriorityColor(item.priority))}>
                         {item.priority} Priority
+                      </span>
+
+                      {/* Status */}
+                      <span className="px-2 py-0.5 rounded bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 text-[11px] font-semibold">
+                        {item.status || (item.is_completed ? 'Completed' : 'Pending')}
                       </span>
 
                       {/* Timestamp link */}
@@ -173,7 +181,7 @@ export const ExtractionsList: React.FC<ExtractionsListProps> = ({
     return (
       <div className="space-y-4">
         {decisions.length === 0 ? (
-          <div className="p-8 text-center text-slate-400 text-sm">No decisions recorded.</div>
+          <div className="p-8 text-center text-slate-400 text-sm">No explicit decisions were identified.</div>
         ) : (
           decisions.map((dec) => (
             <div
@@ -187,6 +195,9 @@ export const ExtractionsList: React.FC<ExtractionsListProps> = ({
                   </div>
                   <div className="space-y-1 flex-1">
                     <h4 className="text-sm font-semibold text-slate-900 dark:text-slate-100">{dec.decision}</h4>
+                    {dec.made_by && (
+                      <p className="text-xs text-slate-500"><span className="font-medium text-slate-700 dark:text-slate-300">Made By:</span> {dec.made_by}</p>
+                    )}
                     {dec.context && (
                       <p className="text-xs text-slate-600 dark:text-slate-300"><span className="font-medium text-slate-700 dark:text-slate-200">Context:</span> {dec.context}</p>
                     )}
@@ -373,20 +384,34 @@ export const ExtractionsList: React.FC<ExtractionsListProps> = ({
     return (
       <div className="space-y-3">
         {questions.length === 0 ? (
-          <div className="p-8 text-center text-slate-400 text-sm">No unresolved questions raised.</div>
+          <div className="p-8 text-center text-slate-400 text-sm">No unanswered questions were identified.</div>
         ) : (
           questions.map((q) => (
             <div
               key={q.id}
-              className="p-4 rounded-xl border border-slate-200/80 dark:border-slate-800/80 bg-white dark:bg-slate-900/50 space-y-2"
+              className="p-4 rounded-xl border border-slate-200/80 dark:border-slate-800/80 bg-white dark:bg-slate-900/50 space-y-2.5"
             >
               <div className="flex items-start justify-between gap-3">
                 <div className="flex items-start gap-2.5 flex-1">
                   <HelpCircle className="w-5 h-5 text-amber-500 shrink-0 mt-0.5" />
-                  <div className="space-y-1">
+                  <div className="space-y-1.5 flex-1">
                     <h4 className="text-sm font-semibold text-slate-900 dark:text-slate-100">{q.question}</h4>
-                    <span className="text-xs text-slate-500 block">Raised by: {q.raised_by || 'Unknown'}</span>
-                    {q.context && <p className="text-xs text-slate-600 dark:text-slate-300">{q.context}</p>}
+                    
+                    {/* Answer section */}
+                    <div className="p-3 rounded-lg bg-slate-50 dark:bg-slate-800/50 border border-slate-200/60 dark:border-slate-700/60 text-xs text-slate-700 dark:text-slate-300">
+                      <span className="font-semibold text-teal-600 dark:text-teal-400 block mb-0.5">Answer:</span>
+                      {q.answer || 'No answer was identified in the meeting.'}
+                    </div>
+
+                    <div className="flex items-center gap-2 text-xs pt-0.5">
+                      <span className="text-slate-500">Raised by: <strong className="text-slate-700 dark:text-slate-300">{q.raised_by || 'Speaker 00'}</strong></span>
+                      <span className={cn(
+                        'px-2 py-0.5 rounded border text-[11px] font-semibold',
+                        q.status === 'Answered' ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' : 'bg-amber-500/10 text-amber-500 border-amber-500/20'
+                      )}>
+                        {q.status || 'Unanswered'}
+                      </span>
+                    </div>
                   </div>
                 </div>
 

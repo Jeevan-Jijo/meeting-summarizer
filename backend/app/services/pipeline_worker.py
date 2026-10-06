@@ -202,12 +202,10 @@ async def process_meeting_pipeline(meeting_id: int, job_id: int):
         llm = LLMService()
         meeting_date_str = meeting.meeting_date.strftime("%Y-%m-%d")
         
-        # Analyze chunks
-        chunk_results = []
-        for chk in chunks:
-            res = await llm.analyze_chunk(chk, meeting.title, meeting_date_str)
-            if res:
-                chunk_results.append(res)
+        # Analyze chunks concurrently
+        tasks = [llm.analyze_chunk(chk, meeting.title, meeting_date_str) for chk in chunks]
+        raw_results = await asyncio.gather(*tasks, return_exceptions=True)
+        chunk_results = [r for r in raw_results if r and not isinstance(r, Exception)]
 
         # Synthesize final document
         speaker_names = [s.display_name for s in created_speakers.values()]
@@ -229,6 +227,8 @@ async def process_meeting_pipeline(meeting_id: int, job_id: int):
                 meeting_id=meeting_id,
                 executive_summary=analysis.executive_summary,
                 agenda_topics=analysis.agenda_topics,
+                discussion_topics=[t.model_dump() for t in analysis.discussion_topics] if analysis.discussion_topics else [],
+                minutes_of_meeting=analysis.minutes_of_meeting.model_dump() if analysis.minutes_of_meeting else {},
                 overall_sentiment_estimate=analysis.sentiment.overall_sentiment_estimate if analysis.sentiment else "Constructive",
                 sentiment_justification=analysis.sentiment.justification if analysis.sentiment else None
             )
@@ -263,6 +263,7 @@ async def process_meeting_pipeline(meeting_id: int, job_id: int):
                         decision=dec.decision,
                         context=dec.context,
                         impact=dec.impact,
+                        made_by=dec.made_by,
                         source_segment_ids=dec.source_segment_ids,
                         source_text=dec.source_text,
                         start_time=dec.start_time,
@@ -277,8 +278,10 @@ async def process_meeting_pipeline(meeting_id: int, job_id: int):
                         meeting_id=meeting_id,
                         description=act.description,
                         assignee=act.assignee if is_valid_content(act.assignee) else "Unassigned",
-                        deadline=act.deadline if is_valid_content(act.deadline) else None,
+                        deadline=act.deadline if is_valid_content(act.deadline) else "Not specified",
                         priority=act.priority or "Medium",
+                        domain=act.domain or "Other",
+                        status=act.status or "Pending",
                         is_completed=False,
                         source_segment_ids=act.source_segment_ids,
                         source_text=act.source_text,
@@ -339,7 +342,9 @@ async def process_meeting_pipeline(meeting_id: int, job_id: int):
                     db.add(UnresolvedQuestion(
                         meeting_id=meeting_id,
                         question=q.question,
-                        raised_by=q.raised_by if is_valid_content(q.raised_by) else "Speaker",
+                        answer=q.answer if is_valid_content(q.answer) else "No answer was identified in the meeting.",
+                        status=q.status if q.status else "Unanswered",
+                        raised_by=q.raised_by if is_valid_content(q.raised_by) else "Speaker 00",
                         context=q.context if is_valid_content(q.context) else None,
                         source_segment_ids=q.source_segment_ids,
                         source_text=q.source_text,

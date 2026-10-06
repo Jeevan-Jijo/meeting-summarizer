@@ -114,6 +114,8 @@ class MeetingSummary(Base):
     meeting_id = Column(Integer, ForeignKey("meetings.id", ondelete="CASCADE"), nullable=False, unique=True)
     executive_summary = Column(Text, nullable=False)
     agenda_topics = Column(JSON, default=list, nullable=False)
+    discussion_topics = Column(JSON, default=list, nullable=False)
+    minutes_of_meeting = Column(JSON, default=dict, nullable=False)
     overall_sentiment_estimate = Column(String(128), nullable=True)
     sentiment_justification = Column(Text, nullable=True)
     created_at = Column(DateTime, default=utcnow, nullable=False)
@@ -146,6 +148,7 @@ class Decision(Base):
     decision = Column(Text, nullable=False)
     context = Column(Text, nullable=True)
     impact = Column(Text, nullable=True)
+    made_by = Column(String(128), nullable=True)
     source_segment_ids = Column(JSON, default=list, nullable=False)
     source_text = Column(Text, nullable=True)
     start_time = Column(Float, nullable=True)
@@ -164,6 +167,8 @@ class ActionItem(Base):
     assignee = Column(String(128), default="Unassigned", nullable=False)
     deadline = Column(String(128), nullable=True)
     priority = Column(String(32), default="Medium", nullable=False)  # Low, Medium, High, Urgent
+    domain = Column(String(64), default="Other", nullable=False)
+    status = Column(String(32), default="Pending", nullable=False)  # Pending, In Progress, Completed
     is_completed = Column(Boolean, default=False, nullable=False)
     source_segment_ids = Column(JSON, default=list, nullable=False)
     source_text = Column(Text, nullable=True)
@@ -232,6 +237,8 @@ class UnresolvedQuestion(Base):
     id = Column(Integer, primary_key=True, index=True)
     meeting_id = Column(Integer, ForeignKey("meetings.id", ondelete="CASCADE"), nullable=False)
     question = Column(Text, nullable=False)
+    answer = Column(Text, nullable=True)
+    status = Column(String(32), default="Unanswered", nullable=False)  # Answered, Partially Answered, Unanswered
     raised_by = Column(String(128), default="Unknown", nullable=False)
     context = Column(Text, nullable=True)
     source_segment_ids = Column(JSON, default=list, nullable=False)

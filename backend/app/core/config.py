@@ -36,7 +36,7 @@ class Settings(BaseSettings):
     OLLAMA_TIMEOUT_SECONDS: float = 180.0
     
     # faster-whisper Speech-to-Text
-    WHISPER_MODEL: str = "openai/whisper-large-v3-turbo"
+    WHISPER_MODEL: str = "base.en"
     WHISPER_FALLBACK_MODEL: str = "base.en"
     WHISPER_DEVICE: str = "auto"
     WHISPER_COMPUTE_TYPE: str = "float16"

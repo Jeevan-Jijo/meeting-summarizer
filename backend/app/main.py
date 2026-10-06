@@ -3,7 +3,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import settings
-from app.core.database import Base, engine
+from app.core.database import Base, engine, init_db
 from app.core.logging import setup_logging, logger
 from app.api.router import api_router
 
@@ -12,7 +12,7 @@ async def lifespan(app: FastAPI):
     # Startup: Setup logging & ensure database tables
     setup_logging()
     logger.info("Initializing Meeting Intelligence System backend...")
-    Base.metadata.create_all(bind=engine)
+    init_db()
     logger.info(f"Database schema verified at {settings.DATABASE_URL}")
     yield
     # Shutdown
