@@ -9,14 +9,12 @@ from app.core.database import SessionLocal
 from app.core.config import settings
 from app.core.logging import logger
 from app.models.db_models import (
-    Meeting, Recording, Speaker, TranscriptSegment, ProcessingJob,
+    Meeting, Recording, Speaker, TranscriptSegment, TranscriptChunkModel, ProcessingJob,
     MeetingSummary, KeyPoint, Decision, ActionItem, ImportantDate,
     ScheduledEvent, Takeaway, UnresolvedQuestion, utcnow
 )
 from app.services.audio_processor import normalize_audio
-from app.services.transcriber import Transcriber
-from app.services.diarizer import Diarizer
-from app.services.aligner import align_transcript_with_speakers
+from app.services.deepgram_service import DeepgramService
 from app.services.chunker import chunk_transcript
 from app.services.llm_service import LLMService
 from app.services.vector_store import MeetingVectorStore
@@ -33,6 +31,53 @@ def is_valid_content(text: Optional[str]) -> bool:
     ]):
         return False
     return len(t) > 2
+
+
+def compute_speaker_stats_from_segments(segments: list) -> dict:
+    """
+    Compute speaker statistics directly from Deepgram diarized segments/utterances.
+    """
+    if not segments:
+        return {}
+
+    speaker_durations = {}
+    speaker_turns_count = {}
+    speaker_labels = {}
+    last_speaker_tag = None
+
+    for seg in segments:
+        spk_tag = seg.get("speaker_tag", "SPEAKER_00")
+        spk_label = seg.get("speaker_label", "Speaker 1")
+        s_start = float(seg.get("start", 0.0))
+        s_end = float(seg.get("end", s_start + 1.0))
+        dur = max(0.01, s_end - s_start)
+
+        speaker_durations[spk_tag] = speaker_durations.get(spk_tag, 0.0) + dur
+        speaker_labels[spk_tag] = spk_label
+
+        if spk_tag != last_speaker_tag:
+            speaker_turns_count[spk_tag] = speaker_turns_count.get(spk_tag, 0) + 1
+            last_speaker_tag = spk_tag
+
+    total_speech_time = sum(speaker_durations.values())
+    if total_speech_time <= 0:
+        total_speech_time = 1.0
+
+    speaker_stats = {}
+    for tag, duration in speaker_durations.items():
+        turns = max(1, speaker_turns_count.get(tag, 1))
+        percentage = round((duration / total_speech_time) * 100.0, 1)
+        speaker_stats[tag] = {
+            "speaker_tag": tag,
+            "display_name": speaker_labels.get(tag, tag),
+            "speaking_time_seconds": round(duration, 2),
+            "speaking_percentage": percentage,
+            "turn_count": turns,
+            "avg_turn_seconds": round(duration / turns, 2)
+        }
+
+    return speaker_stats
+
 
 async def update_job_status(
     db: Session,
@@ -77,7 +122,7 @@ async def update_job_status(
 
 async def process_meeting_pipeline(meeting_id: int, job_id: int):
     """
-    Main background pipeline execution covering all states sequentially.
+    Main background pipeline execution covering all states sequentially with Deepgram cloud STT.
     """
     db = SessionLocal()
     try:
@@ -90,112 +135,151 @@ async def process_meeting_pipeline(meeting_id: int, job_id: int):
         job.started_at = utcnow()
         db.commit()
 
-        # Step 1: PREPROCESSING (FFmpeg)
-        await update_job_status(db, job_id, "PREPROCESSING", 10.0, "Normalizing audio with FFmpeg", "Starting FFmpeg audio normalization...")
-        recording = meeting.recording
-        if not recording:
-            raise ValueError("No recording associated with meeting.")
+        # Check existing transcript segments for retry optimization
+        existing_segments = db.query(TranscriptSegment).filter(
+            TranscriptSegment.meeting_id == meeting_id
+        ).order_by(TranscriptSegment.start_time).all()
 
-        raw_audio_path = recording.file_path
-        normalized_wav_path = str(settings.PROCESSED_DIR / f"meeting_{meeting_id}_norm.wav")
-        
-        success, msg, duration = await normalize_audio(raw_audio_path, normalized_wav_path)
-        if not success:
-            raise RuntimeError(f"Audio normalization failed: {msg}")
-
-        recording.normalized_path = normalized_wav_path
-        recording.duration_seconds = duration
-        meeting.duration_seconds = duration
-        db.commit()
-
-        # Step 2: TRANSCRIBING (NVIDIA Parakeet)
-        await update_job_status(db, job_id, "TRANSCRIBING", 25.0, "Transcribing with NVIDIA Parakeet", "Transcribing audio segments with nvidia/parakeet-tdt-0.6b-v2...")
-        transcriber = Transcriber()
-        try:
-            raw_segments, detected_language = await asyncio.to_thread(transcriber.transcribe, normalized_wav_path)
-        finally:
-            transcriber.unload()
-
-        if not raw_segments:
-            logger.warning(f"No speech detected for meeting {meeting_id}. Creating empty placeholder.")
-            raw_segments = [{
-                "start": 0.0,
-                "end": max(1.0, duration),
-                "text": "[No audible speech detected in recording]",
-                "confidence": 0.5
-            }]
-            detected_language = "en"
-
-        # Step 3: DIARIZING (pyannote.audio)
-        await update_job_status(db, job_id, "DIARIZING", 45.0, "Speaker Diarization", "Detecting speaker turns...")
-        diarizer = Diarizer()
-        try:
-            speaker_turns, is_real, diar_msg = await asyncio.to_thread(diarizer.diarize, normalized_wav_path)
-            await update_job_status(db, job_id, "DIARIZING", 50.0, "Speaker Diarization", diar_msg)
-        finally:
-            diarizer.unload()
-
-        # Step 4: ALIGNING (Segment + Speaker matching)
-        await update_job_status(db, job_id, "ALIGNING", 55.0, "Aligning transcript & speakers", "Assigning speaker tags to transcript segments...")
-        aligned_segs, speaker_stats = align_transcript_with_speakers(raw_segments, speaker_turns)
-
-        # Clear existing speakers & segments if re-running
-        db.query(TranscriptSegment).filter(TranscriptSegment.meeting_id == meeting_id).delete()
-        db.query(Speaker).filter(Speaker.meeting_id == meeting_id).delete()
-        db.commit()
-
-        # Create Speaker DB records
-        created_speakers = {}
-        for spk_tag, s_data in speaker_stats.items():
-            spk_obj = Speaker(
-                meeting_id=meeting_id,
-                speaker_tag=spk_tag,
-                display_name=s_data["display_name"],
-                is_customized=False,
-                speaking_time_seconds=s_data["speaking_time_seconds"],
-                speaking_percentage=s_data["speaking_percentage"],
-                turn_count=s_data["turn_count"],
-                avg_turn_seconds=s_data["avg_turn_seconds"]
+        if existing_segments:
+            await update_job_status(
+                db, job_id, "TRANSCRIBING", 50.0,
+                "Using existing transcript",
+                f"Found {len(existing_segments)} existing transcript segments for meeting {meeting_id}. Skipping STT step."
             )
-            db.add(spk_obj)
-            db.flush()
-            created_speakers[spk_tag] = spk_obj
+            created_segs = existing_segments
+            existing_speakers = db.query(Speaker).filter(Speaker.meeting_id == meeting_id).all()
+            created_speakers = {s.speaker_tag: s for s in existing_speakers}
+        else:
+            # Step 1: PREPROCESSING (FFmpeg)
+            await update_job_status(db, job_id, "PREPROCESSING", 10.0, "Normalizing audio with FFmpeg", "Starting FFmpeg audio normalization...")
+            recording = meeting.recording
+            if not recording:
+                raise ValueError("No recording associated with meeting.")
 
-        # Create TranscriptSegment DB records
-        created_segs = []
-        for seg in aligned_segs:
-            spk_tag = seg.get("speaker_tag", "SPEAKER_00")
-            spk_obj = created_speakers.get(spk_tag)
+            raw_audio_path = recording.file_path
+            normalized_wav_path = str(settings.PROCESSED_DIR / f"meeting_{meeting_id}_norm.wav")
             
-            t_seg = TranscriptSegment(
-                meeting_id=meeting_id,
-                speaker_id=spk_obj.id if spk_obj else None,
-                speaker_label=spk_obj.display_name if spk_obj else seg.get("speaker_label", "Speaker"),
-                start_time=seg["start"],
-                end_time=seg["end"],
-                raw_text=seg["text"],
-                cleaned_text=seg.get("cleaned_text", seg["text"]),
-                confidence=seg.get("confidence", 1.0),
-                language=detected_language
+            success, msg, duration = await normalize_audio(raw_audio_path, normalized_wav_path)
+            if not success:
+                raise RuntimeError(f"Audio normalization failed: {msg}")
+
+            recording.normalized_path = normalized_wav_path
+            recording.duration_seconds = duration
+            meeting.duration_seconds = duration
+            db.commit()
+
+            # Step 2: TRANSCRIBING & DIARIZING (Deepgram Service)
+            await update_job_status(
+                db, job_id, "TRANSCRIBING", 30.0,
+                "Transcribing & Diarizing with Deepgram",
+                "Sending normalized recording to Deepgram Cloud STT (Nova-2 model)..."
             )
-            db.add(t_seg)
-            created_segs.append(t_seg)
 
-        db.commit()
+            deepgram_service = DeepgramService()
+            if not deepgram_service.is_configured():
+                raise ValueError(
+                    "DEEPGRAM_API_KEY is missing or unconfigured. Please configure DEEPGRAM_API_KEY in backend/.env"
+                )
 
-        # Step 5: CHUNKING
+            raw_segments, detected_language = await asyncio.to_thread(
+                deepgram_service.transcribe_file, normalized_wav_path
+            )
+
+            await update_job_status(
+                db, job_id, "TRANSCRIBING", 50.0,
+                "Processing Deepgram transcript & speakers",
+                f"Deepgram returned {len(raw_segments)} segments in language '{detected_language}'."
+            )
+
+            # Calculate speaker stats directly from Deepgram utterances
+            speaker_stats = compute_speaker_stats_from_segments(raw_segments)
+
+            # Clear existing speakers & segments if re-running
+            db.query(TranscriptSegment).filter(TranscriptSegment.meeting_id == meeting_id).delete()
+            db.query(Speaker).filter(Speaker.meeting_id == meeting_id).delete()
+            db.commit()
+
+            # Create Speaker DB records
+            created_speakers = {}
+            for spk_tag, s_data in speaker_stats.items():
+                spk_obj = Speaker(
+                    meeting_id=meeting_id,
+                    speaker_tag=spk_tag,
+                    display_name=s_data["display_name"],
+                    is_customized=False,
+                    speaking_time_seconds=s_data["speaking_time_seconds"],
+                    speaking_percentage=s_data["speaking_percentage"],
+                    turn_count=s_data["turn_count"],
+                    avg_turn_seconds=s_data["avg_turn_seconds"]
+                )
+                db.add(spk_obj)
+                db.flush()
+                created_speakers[spk_tag] = spk_obj
+
+            # Create TranscriptSegment DB records
+            created_segs = []
+            for seg in raw_segments:
+                spk_tag = seg.get("speaker_tag", "SPEAKER_00")
+                spk_obj = created_speakers.get(spk_tag)
+                
+                t_seg = TranscriptSegment(
+                    meeting_id=meeting_id,
+                    speaker_id=spk_obj.id if spk_obj else None,
+                    speaker_label=spk_obj.display_name if spk_obj else seg.get("speaker_label", "Speaker"),
+                    start_time=seg["start"],
+                    end_time=seg["end"],
+                    raw_text=seg["text"],
+                    cleaned_text=seg.get("cleaned_text", seg["text"]),
+                    confidence=seg.get("confidence", 1.0),
+                    language=detected_language
+                )
+                db.add(t_seg)
+                created_segs.append(t_seg)
+
+            db.commit()
+
+        # Step 5: CHUNKING & PERSISTENCE
         await update_job_status(db, job_id, "CHUNKING", 65.0, "Semantic Chunking", "Creating metadata-preserving semantic chunks...")
-        seg_dicts = [
-            {
-                "id": s.id,
-                "start": s.start_time,
-                "end": s.end_time,
-                "speaker_label": s.speaker_label,
-                "cleaned_text": s.cleaned_text
-            }
-            for s in created_segs
-        ]
-        chunks = chunk_transcript(seg_dicts, target_words_per_chunk=350, overlap_words=40)
+        
+        # Check existing chunks in database for retry optimization
+        existing_chunks = db.query(TranscriptChunkModel).filter(
+            TranscriptChunkModel.meeting_id == meeting_id
+        ).order_by(TranscriptChunkModel.chunk_index).all()
+
+        if existing_chunks:
+            logger.info(f"Reusing {len(existing_chunks)} existing database chunks for meeting {meeting_id}")
+            created_chunks = existing_chunks
+        else:
+            seg_dicts = [
+                {
+                    "id": s.id,
+                    "start": s.start_time,
+                    "end": s.end_time,
+                    "speaker_label": s.speaker_label,
+                    "cleaned_text": s.cleaned_text
+                }
+                for s in created_segs
+            ]
+            raw_chunks = chunk_transcript(seg_dicts, target_words_per_chunk=350, overlap_words=40)
+            
+            # Clear old chunks for meeting
+            db.query(TranscriptChunkModel).filter(TranscriptChunkModel.meeting_id == meeting_id).delete()
+            db.commit()
+
+            created_chunks = []
+            for chk in raw_chunks:
+                c_model = TranscriptChunkModel(
+                    meeting_id=meeting_id,
+                    chunk_index=chk.chunk_index,
+                    start_time=chk.start_time,
+                    end_time=chk.end_time,
+                    segment_ids=chk.segment_ids,
+                    formatted_text=chk.formatted_text,
+                    word_count=chk.word_count
+                )
+                db.add(c_model)
+                created_chunks.append(c_model)
+            db.commit()
 
         # Step 6: ANALYZING (Ollama LLM structured extractions)
         await update_job_status(db, job_id, "ANALYZING", 75.0, "LLM Extraction via Ollama", "Extracting summary, decisions, action items, dates...")
@@ -203,7 +287,7 @@ async def process_meeting_pipeline(meeting_id: int, job_id: int):
         meeting_date_str = meeting.meeting_date.strftime("%Y-%m-%d")
         
         # Analyze chunks concurrently
-        tasks = [llm.analyze_chunk(chk, meeting.title, meeting_date_str) for chk in chunks]
+        tasks = [llm.analyze_chunk(chk, meeting.title, meeting_date_str) for chk in created_chunks]
         raw_results = await asyncio.gather(*tasks, return_exceptions=True)
         chunk_results = [r for r in raw_results if r and not isinstance(r, Exception)]
 
@@ -358,7 +442,7 @@ async def process_meeting_pipeline(meeting_id: int, job_id: int):
         # Step 7: INDEXING (Local FAISS + sentence-transformers)
         await update_job_status(db, job_id, "INDEXING", 90.0, "Building vector index", "Indexing transcript embeddings for local RAG chatbot...")
         vstore = MeetingVectorStore(meeting_id)
-        await asyncio.to_thread(vstore.build_index, chunks)
+        await asyncio.to_thread(vstore.build_index, created_chunks)
 
         # Step 8: FINALIZING
         await update_job_status(db, job_id, "FINALIZING", 98.0, "Finalizing meeting results", "Assembling meeting minutes...")

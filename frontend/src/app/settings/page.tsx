@@ -1,23 +1,21 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
-  Settings, 
-  Cpu, 
   ShieldCheck, 
-  ExternalLink, 
+  Cpu, 
   RefreshCw, 
   CheckCircle2, 
-  AlertTriangle, 
-  Activity, 
-  Layers, 
+  AlertCircle, 
   Info,
-  Server
+  ExternalLink,
+  KeyRound,
+  Sparkles
 } from 'lucide-react';
-import { api } from '@/lib/api';
-import { SystemHealth } from '@/lib/types';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
+import { api } from '@/lib/api';
+import { SystemHealth } from '@/lib/types';
 
 export default function SettingsPage() {
   const [health, setHealth] = useState<SystemHealth | null>(null);
@@ -40,15 +38,15 @@ export default function SettingsPage() {
   };
 
   return (
-    <div className="space-y-8 max-w-4xl mx-auto animate-fade-in pb-12">
+    <div className="space-y-6 max-w-5xl mx-auto animate-fade-in pb-12">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-slate-900 dark:text-slate-100 tracking-tight flex items-center gap-2">
-            <Settings className="w-6 h-6 text-teal-500" /> System Settings & Health
+            <Cpu className="w-6 h-6 text-teal-500" /> Pipeline Settings & Engine Health
           </h1>
           <p className="text-xs text-slate-500 dark:text-slate-400">
-            Real-time status of local hardware acceleration, speech engines, LLM inference, and speaker diarization.
+            Real-time operational status of media normalization, Deepgram Cloud STT, local Ollama LLM, and vector embeddings.
           </p>
         </div>
 
@@ -57,14 +55,14 @@ export default function SettingsPage() {
         </Button>
       </div>
 
-      {/* Privacy Notice Card */}
-      <Card className="p-5 border-emerald-500/20 bg-emerald-500/5 dark:bg-emerald-950/20 space-y-2">
-        <div className="flex items-center gap-2 text-emerald-700 dark:text-emerald-400 font-semibold text-sm">
-          <ShieldCheck className="w-5 h-5 shrink-0" />
-          <span>Local-First Guarantee</span>
+      {/* Deepgram STT Integration Banner */}
+      <Card className="p-5 border-teal-500/20 bg-teal-500/5 dark:bg-teal-950/20 space-y-2">
+        <div className="flex items-center gap-2 text-teal-700 dark:text-teal-400 font-semibold text-sm">
+          <Sparkles className="w-5 h-5 shrink-0" />
+          <span>Deepgram Nova-2 Integration Active</span>
         </div>
         <p className="text-xs text-slate-700 dark:text-slate-300 leading-relaxed">
-          All audio normalization, NVIDIA Parakeet speech-to-text, PyAnnote diarization, and Ollama Qwen3 reasoning run strictly on your local PC. Zero external API calls or pay-per-use cloud dependencies.
+          Audio normalization and RAG embedding searches run locally. High-accuracy speech-to-text and native speaker diarization are powered by Deepgram Cloud API for instant processing.
         </p>
       </Card>
 
@@ -81,7 +79,7 @@ export default function SettingsPage() {
               <span className="font-semibold text-slate-900 dark:text-slate-100 text-sm">
                 FFmpeg Media Engine
               </span>
-              <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full ${health?.ffmpeg?.available ? 'bg-emerald-500/10 text-emerald-500' : 'bg-rose-500/10 text-rose-500'}`}>
+              <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full ${health?.ffmpeg?.available ? 'bg-teal-500/10 text-teal-500' : 'bg-rose-500/10 text-rose-500'}`}>
                 {health?.ffmpeg?.available ? 'Operational' : 'Not Found'}
               </span>
             </div>
@@ -91,38 +89,39 @@ export default function SettingsPage() {
           </div>
         </Card>
 
-        {/* 2. NVIDIA Parakeet STT */}
-        <Card className="p-5 space-y-3">
+        {/* 2. Deepgram Cloud STT & Diarization */}
+        <Card className="p-5 space-y-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <span className="font-semibold text-slate-900 dark:text-slate-100 text-sm">
-                NVIDIA Parakeet (Speech-to-Text)
+                Deepgram Cloud STT & Native Diarization
               </span>
-              <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-500">
-                Ready
+              <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full ${health?.deepgram?.configured ? 'bg-teal-500/10 text-teal-500' : 'bg-amber-500/10 text-amber-500'}`}>
+                {health?.deepgram?.configured ? 'Configured & Ready' : 'API Key Unconfigured'}
               </span>
             </div>
             <span className="text-xs font-mono text-slate-500">
-              {(health?.parakeet || health?.whisper)?.device?.toUpperCase()} ({(health?.parakeet || health?.whisper)?.compute_type})
+              Model: {health?.deepgram?.model || 'nova-2'}
             </span>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs bg-slate-50 dark:bg-slate-800/40 p-3 rounded-xl border border-slate-200/50 dark:border-slate-700/50">
-            <div>
-              <span className="text-slate-500 block">Primary Model:</span>
-              <span className="font-mono font-medium text-slate-800 dark:text-slate-200">{(health?.parakeet || health?.whisper)?.primary_model}</span>
+          <p className="text-xs text-slate-600 dark:text-slate-400">
+            {health?.deepgram?.status_message || 'Transcribes speech and identifies speakers natively.'}
+          </p>
+
+          {!health?.deepgram?.configured && (
+            <div className="p-4 rounded-xl border border-amber-500/30 bg-amber-500/10 space-y-2 text-xs">
+              <div className="font-semibold text-amber-800 dark:text-amber-200 flex items-center gap-1.5">
+                <KeyRound className="w-4 h-4 text-amber-500" /> How to configure your Deepgram API Key:
+              </div>
+              <ol className="list-decimal list-inside space-y-1 text-amber-700 dark:text-amber-300">
+                <li>Create a free account at <a href="https://console.deepgram.com" target="_blank" rel="noreferrer" className="underline inline-flex items-center gap-0.5">console.deepgram.com <ExternalLink className="w-3 h-3" /></a></li>
+                <li>Create an API key in your Deepgram console dashboard.</li>
+                <li>Open <code className="px-1.5 py-0.5 rounded bg-amber-200/50 dark:bg-amber-900/50 font-mono text-[11px]">backend/.env</code> in your editor.</li>
+                <li>Set <code className="px-1.5 py-0.5 rounded bg-amber-200/50 dark:bg-amber-900/50 font-mono text-[11px]">DEEPGRAM_API_KEY=your_key_here</code> and restart the backend server.</li>
+              </ol>
             </div>
-            <div>
-              <span className="text-slate-500 block">CUDA Acceleration:</span>
-              <span className="font-medium text-slate-800 dark:text-slate-200">
-                {(health?.parakeet || health?.whisper)?.cuda_available ? `Yes (${(health?.parakeet || health?.whisper)?.gpu_name || 'GPU'})` : 'CPU Mode'}
-              </span>
-            </div>
-            <div>
-              <span className="text-slate-500 block">VRAM Available:</span>
-              <span className="font-mono font-medium text-slate-800 dark:text-slate-200">{(health?.parakeet || health?.whisper)?.vram_gb || 0} GB</span>
-            </div>
-          </div>
+          )}
         </Card>
 
         {/* 3. Ollama LLM */}
@@ -132,7 +131,7 @@ export default function SettingsPage() {
               <span className="font-semibold text-slate-900 dark:text-slate-100 text-sm">
                 Ollama Local LLM
               </span>
-              <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full ${health?.ollama?.connected ? 'bg-emerald-500/10 text-emerald-500' : 'bg-amber-500/10 text-amber-500'}`}>
+              <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full ${health?.ollama?.connected ? 'bg-teal-500/10 text-teal-500' : 'bg-amber-500/10 text-amber-500'}`}>
                 {health?.ollama?.connected ? 'Connected' : 'Ollama Offline'}
               </span>
             </div>
@@ -163,34 +162,22 @@ export default function SettingsPage() {
           </div>
         </Card>
 
-        {/* 4. Speaker Diarization & Hugging Face Token Guide */}
-        <Card className="p-5 space-y-4">
+        {/* 4. Local Embeddings & Vector Store */}
+        <Card className="p-5 space-y-3">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <span className="font-semibold text-slate-900 dark:text-slate-100 text-sm">
-                Speaker Diarization (pyannote 3.1)
+                Sentence Transformers & FAISS Vector Store
               </span>
-              <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full ${health?.diarization?.is_ready ? 'bg-emerald-500/10 text-emerald-500' : 'bg-amber-500/10 text-amber-500'}`}>
-                {health?.diarization?.is_ready ? 'Ready with Token' : 'Fallback Mode'}
+              <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-teal-500/10 text-teal-500">
+                Operational
               </span>
             </div>
+            <span className="text-xs font-mono text-slate-500">{health?.embeddings?.device}</span>
           </div>
-
-          <p className="text-xs text-slate-600 dark:text-slate-400">
-            {health?.diarization?.status_message}
+          <p className="text-xs text-slate-500">
+            Embedding Model: <code className="font-mono text-[11px] text-slate-800 dark:text-slate-200">{health?.embeddings?.model}</code>
           </p>
-
-          <div className="p-4 rounded-xl border border-slate-200 dark:border-slate-700/60 bg-slate-50 dark:bg-slate-800/40 space-y-2 text-xs">
-            <div className="font-semibold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
-              <Info className="w-4 h-4 text-teal-500" /> How to enable pyannote diarization:
-            </div>
-            <ol className="list-decimal list-inside space-y-1 text-slate-600 dark:text-slate-300">
-              <li>Create a free account at <a href="https://huggingface.co/join" target="_blank" rel="noreferrer" className="text-teal-500 underline inline-flex items-center gap-0.5">huggingface.co <ExternalLink className="w-3 h-3" /></a></li>
-              <li>Accept terms at <a href="https://huggingface.co/pyannote/speaker-diarization-3.1" target="_blank" rel="noreferrer" className="text-teal-500 underline inline-flex items-center gap-0.5">pyannote/speaker-diarization-3.1 <ExternalLink className="w-3 h-3" /></a></li>
-              <li>Generate a token at <a href="https://huggingface.co/settings/tokens" target="_blank" rel="noreferrer" className="text-teal-500 underline inline-flex items-center gap-0.5">huggingface.co/settings/tokens <ExternalLink className="w-3 h-3" /></a></li>
-              <li>Set <code className="px-1.5 py-0.5 rounded bg-slate-200 dark:bg-slate-700 font-mono text-[11px]">HF_TOKEN=hf_...</code> in <code className="font-mono text-[11px]">backend/.env</code> or your Windows environment variables.</li>
-            </ol>
-          </div>
         </Card>
       </div>
     </div>

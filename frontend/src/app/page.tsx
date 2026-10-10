@@ -150,13 +150,13 @@ export default function DashboardPage() {
         </Card>
 
         <Card className="flex items-center gap-4">
-          <div className="w-12 h-12 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-600 dark:text-emerald-400 shrink-0">
+          <div className="w-12 h-12 rounded-xl bg-teal-500/10 border border-teal-500/20 flex items-center justify-center text-teal-600 dark:text-teal-400 shrink-0">
             <ShieldCheck className="w-6 h-6" />
           </div>
           <div>
-            <p className="text-xs text-slate-500 dark:text-slate-400 font-medium">Inference Engine</p>
-            <p className="text-sm font-semibold text-emerald-600 dark:text-emerald-400 truncate">
-              {health?.whisper?.cuda_available ? 'CUDA Active' : 'Local CPU'}
+            <p className="text-xs text-slate-500 dark:text-slate-400 font-medium">STT Engine</p>
+            <p className="text-sm font-semibold text-teal-600 dark:text-teal-400 truncate">
+              {health?.deepgram?.configured ? 'Deepgram Nova-2' : 'API Key Needed'}
             </p>
           </div>
         </Card>
@@ -226,29 +226,29 @@ export default function DashboardPage() {
         {/* Right Info Column: Local System Health */}
         <div className="space-y-4">
           <h2 className="text-base font-bold text-slate-900 dark:text-slate-100 flex items-center gap-2">
-            <Cpu className="w-4 h-4 text-teal-500" /> Local System Health
+            <Cpu className="w-4 h-4 text-teal-500" /> Pipeline Engine Health
           </h2>
 
           <Card className="space-y-4 p-5">
             <div className="space-y-3 text-xs">
               <div className="flex justify-between items-center pb-2 border-b border-slate-100 dark:border-slate-800">
                 <span className="text-slate-500">FFmpeg Normalizer:</span>
-                <span className={`font-semibold ${health?.ffmpeg?.available ? 'text-emerald-500' : 'text-rose-500'}`}>
+                <span className={`font-semibold ${health?.ffmpeg?.available ? 'text-teal-500' : 'text-rose-500'}`}>
                   {health?.ffmpeg?.available ? 'Available' : 'Missing'}
                 </span>
               </div>
 
               <div className="flex justify-between items-center pb-2 border-b border-slate-100 dark:border-slate-800">
-                <span className="text-slate-500">NVIDIA Parakeet STT:</span>
-                <span className="font-semibold text-slate-700 dark:text-slate-300">
-                  {(health?.parakeet || health?.whisper)?.device?.toUpperCase()} ({(health?.parakeet || health?.whisper)?.compute_type})
+                <span className="text-slate-500">Deepgram Cloud STT:</span>
+                <span className={`font-semibold ${health?.deepgram?.configured ? 'text-teal-500' : 'text-amber-500'}`}>
+                  {health?.deepgram?.configured ? 'Nova-2 Active' : 'Key Unconfigured'}
                 </span>
               </div>
 
               <div className="flex justify-between items-center pb-2 border-b border-slate-100 dark:border-slate-800">
-                <span className="text-slate-500">PyAnnote Diarization:</span>
-                <span className={`font-semibold ${health?.diarization?.is_ready ? 'text-emerald-500' : 'text-amber-500'}`}>
-                  {health?.diarization?.is_ready ? 'Ready' : 'Fallback Mode'}
+                <span className="text-slate-500">Speaker Diarization:</span>
+                <span className={`font-semibold ${health?.diarization?.is_ready ? 'text-teal-500' : 'text-amber-500'}`}>
+                  {health?.diarization?.is_ready ? 'Deepgram Native' : 'Requires API Key'}
                 </span>
               </div>
 

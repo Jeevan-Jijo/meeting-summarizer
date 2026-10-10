@@ -23,6 +23,7 @@ from app.schemas.meeting import (
     UnresolvedQuestionUpdate, UnresolvedQuestionRead
 )
 from app.services.pipeline_worker import process_meeting_pipeline
+from app.services.vector_store import MeetingVectorStore
 
 router = APIRouter(prefix="/meetings", tags=["Meetings"])
 
@@ -183,6 +184,10 @@ def delete_meeting(meeting_id: int, db: Session = Depends(get_db)):
         except Exception as e:
             logger.warning(f"Error removing files for meeting {meeting_id}: {e}")
 
+    # Clean FAISS vector index directory
+    vstore = MeetingVectorStore(meeting_id)
+    vstore.delete_index()
+
     db.delete(meeting)
     db.commit()
     return {"status": "deleted", "meeting_id": meeting_id}
@@ -196,6 +201,20 @@ def reprocess_meeting(meeting_id: int, background_tasks: BackgroundTasks, db: Se
         raise HTTPException(status_code=404, detail="Meeting not found")
     if not meeting.recording or not os.path.exists(meeting.recording.file_path):
         raise HTTPException(status_code=400, detail="No source recording found to reprocess.")
+
+    # Prevent duplicate processing jobs
+    active_job = db.query(ProcessingJob).filter(
+        ProcessingJob.meeting_id == meeting_id,
+        ProcessingJob.status.in_(["QUEUED", "PREPROCESSING", "TRANSCRIBING", "CHUNKING", "ANALYZING", "INDEXING", "FINALIZING"])
+    ).first()
+
+    if active_job:
+        return {
+            "status": active_job.status,
+            "job_id": active_job.id,
+            "meeting_id": meeting.id,
+            "message": "A processing job is already active for this meeting."
+        }
 
     meeting.status = "QUEUED"
     job = ProcessingJob(

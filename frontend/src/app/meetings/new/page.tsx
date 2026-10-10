@@ -128,10 +128,10 @@ export default function NewMeetingPage() {
 
           <div className="space-y-1">
             <h3 className="text-lg font-bold text-slate-900 dark:text-slate-100">
-              Processing Meeting on Local AI Pipeline
+              Processing Meeting Intelligence Pipeline
             </h3>
             <p className="text-xs text-slate-500 dark:text-slate-400">
-              Executing NVIDIA Parakeet STT, PyAnnote diarization, and Ollama Qwen3 extraction.
+              Executing FFmpeg normalization, Deepgram Cloud STT & Diarization, and Ollama reasoning.
             </p>
           </div>
 
@@ -144,7 +144,7 @@ export default function NewMeetingPage() {
           </div>
 
           <p className="text-[11px] text-slate-400 italic">
-            All AI computation is running securely on your local GPU/CPU. No cloud data transfer.
+            Fast cloud transcription via Deepgram Nova-2 with local Ollama extractions and vector search.
           </p>
         </div>
       )}

@@ -35,6 +35,10 @@ class Settings(BaseSettings):
     OLLAMA_TEMPERATURE: float = 0.1
     OLLAMA_TIMEOUT_SECONDS: float = 180.0
     
+    # Deepgram Speech-to-Text & Diarization
+    DEEPGRAM_API_KEY: str = ""
+    DEEPGRAM_MODEL: str = "nova-2"
+
     # NVIDIA Parakeet Speech-to-Text
     PARAKEET_MODEL: str = "nvidia/parakeet-tdt-0.6b-v2"
     PARAKEET_FALLBACK_MODEL: str = "nvidia/parakeet-tdt-0.6b-v2"

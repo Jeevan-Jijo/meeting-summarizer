@@ -73,7 +73,22 @@ class MeetingVectorStore:
         meta_list = []
 
         for chk in chunks:
-            chk_dict = chk.to_dict() if hasattr(chk, "to_dict") else dict(chk)
+            if hasattr(chk, "to_dict"):
+                chk_dict = chk.to_dict()
+            elif isinstance(chk, dict):
+                chk_dict = chk
+            else:
+                # Handle SQLAlchemy TranscriptChunkModel or generic objects
+                chk_dict = {
+                    "chunk_index": getattr(chk, "chunk_index", 0),
+                    "start_time": getattr(chk, "start_time", 0.0),
+                    "end_time": getattr(chk, "end_time", 0.0),
+                    "start_timestamp": format_timestamp(getattr(chk, "start_time", 0.0)),
+                    "end_timestamp": format_timestamp(getattr(chk, "end_time", 0.0)),
+                    "segment_ids": getattr(chk, "segment_ids", []),
+                    "formatted_text": getattr(chk, "formatted_text", ""),
+                    "word_count": getattr(chk, "word_count", 0)
+                }
             texts.append(chk_dict["formatted_text"])
             meta_list.append(chk_dict)
 
@@ -110,6 +125,21 @@ class MeetingVectorStore:
         except Exception as e:
             logger.error(f"Failed to load vector index for meeting {self.meeting_id}: {e}")
             return False
+
+    def delete_index(self) -> bool:
+        """Delete FAISS index and metadata directory for this meeting."""
+        import shutil
+        if self.index_dir.exists():
+            try:
+                shutil.rmtree(self.index_dir)
+                self.index = None
+                self.chunks_metadata = []
+                logger.info(f"Deleted vector index directory for meeting {self.meeting_id}")
+                return True
+            except Exception as e:
+                logger.error(f"Error deleting vector index directory for meeting {self.meeting_id}: {e}")
+                return False
+        return False
 
     def search(self, query: str, top_k: int = 3) -> List[Dict[str, Any]]:
         """Search top-k most relevant chunks for the query."""

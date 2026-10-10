@@ -80,19 +80,19 @@ export const Sidebar: React.FC = () => {
       <div className="p-4 m-3 rounded-xl border border-slate-200/80 dark:border-slate-800/80 bg-slate-50 dark:bg-slate-900/40 space-y-3">
         <div className="flex items-center justify-between text-xs">
           <span className="font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
-            <ShieldCheck className="w-3.5 h-3.5 text-emerald-500" />
-            100% Local Inference
+            <ShieldCheck className="w-3.5 h-3.5 text-teal-500" />
+            MIS Engine Pipeline
           </span>
-          <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+          <span className={`w-2 h-2 rounded-full ${health?.deepgram?.configured ? 'bg-teal-500 animate-pulse' : 'bg-amber-500'}`} />
         </div>
         
         <div className="space-y-1.5 text-[11px] text-slate-500 dark:text-slate-400">
           <div className="flex justify-between items-center">
             <span className="flex items-center gap-1">
-              <Cpu className="w-3 h-3 text-slate-400" /> Parakeet:
+              <Cpu className="w-3 h-3 text-slate-400" /> Deepgram:
             </span>
             <span className="font-mono text-slate-700 dark:text-slate-300">
-              {(health?.parakeet || health?.whisper)?.device?.toUpperCase() || 'GPU/CPU'}
+              {health?.deepgram?.configured ? 'Cloud STT' : 'Key Needed'}
             </span>
           </div>
           <div className="flex justify-between items-center">

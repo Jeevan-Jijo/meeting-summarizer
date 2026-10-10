@@ -26,6 +26,7 @@ class Meeting(Base):
     recording = relationship("Recording", back_populates="meeting", uselist=False, cascade="all, delete-orphan")
     speakers = relationship("Speaker", back_populates="meeting", cascade="all, delete-orphan")
     transcript_segments = relationship("TranscriptSegment", back_populates="meeting", cascade="all, delete-orphan", order_by="TranscriptSegment.start_time")
+    transcript_chunks = relationship("TranscriptChunkModel", back_populates="meeting", cascade="all, delete-orphan", order_by="TranscriptChunkModel.chunk_index")
     processing_jobs = relationship("ProcessingJob", back_populates="meeting", cascade="all, delete-orphan", order_by="desc(ProcessingJob.created_at)")
     summary = relationship("MeetingSummary", back_populates="meeting", uselist=False, cascade="all, delete-orphan")
     key_points = relationship("KeyPoint", back_populates="meeting", cascade="all, delete-orphan")
@@ -88,6 +89,22 @@ class TranscriptSegment(Base):
 
     meeting = relationship("Meeting", back_populates="transcript_segments")
     speaker = relationship("Speaker", back_populates="transcript_segments")
+
+
+class TranscriptChunkModel(Base):
+    __tablename__ = "transcript_chunks"
+
+    id = Column(Integer, primary_key=True, index=True)
+    meeting_id = Column(Integer, ForeignKey("meetings.id", ondelete="CASCADE"), nullable=False)
+    chunk_index = Column(Integer, nullable=False)
+    start_time = Column(Float, nullable=False)
+    end_time = Column(Float, nullable=False)
+    segment_ids = Column(JSON, default=list, nullable=False)
+    formatted_text = Column(Text, nullable=False)
+    word_count = Column(Integer, nullable=False, default=0)
+    created_at = Column(DateTime, default=utcnow, nullable=False)
+
+    meeting = relationship("Meeting", back_populates="transcript_chunks")
 
 
 class ProcessingJob(Base):

@@ -4,8 +4,7 @@ from typing import Dict, Any, List
 from fastapi import APIRouter
 from app.core.config import settings
 from app.services.audio_processor import is_ffmpeg_available
-from app.services.transcriber import detect_device_and_compute_type
-from app.services.diarizer import Diarizer
+from app.services.deepgram_service import DeepgramService
 from app.services.llm_service import OllamaClient
 
 router = APIRouter(prefix="/settings", tags=["Settings & Health"])
@@ -13,41 +12,29 @@ router = APIRouter(prefix="/settings", tags=["Settings & Health"])
 @router.get("/health")
 async def get_system_health() -> Dict[str, Any]:
     """
-    Check the operational status of all local AI engines and dependencies.
+    Check the operational status of all AI services and dependencies.
     Never exposes real secret tokens.
     """
     # 1. FFmpeg Check
     ffmpeg_ok = is_ffmpeg_available()
     ffmpeg_path = shutil.which("ffmpeg") or "Not found in PATH"
 
-    # 2. NVIDIA Parakeet & PyTorch CUDA check
-    parakeet_device, parakeet_compute = detect_device_and_compute_type()
-    cuda_available = False
-    gpu_name = None
-    vram_gb = 0.0
-    try:
-        import torch
-        cuda_available = torch.cuda.is_available()
-        if cuda_available:
-            gpu_name = torch.cuda.get_device_name(0)
-            vram_gb = round(torch.cuda.get_device_properties(0).total_memory / (1024**3), 2)
-    except Exception:
-        pass
-
-    parakeet_health = {
-        "primary_model": getattr(settings, "PARAKEET_MODEL", "nvidia/parakeet-tdt-0.6b-v2"),
-        "fallback_model": getattr(settings, "PARAKEET_FALLBACK_MODEL", "nvidia/parakeet-tdt-0.6b-v2"),
-        "device": parakeet_device,
-        "compute_type": parakeet_compute,
-        "cuda_available": cuda_available,
-        "gpu_name": gpu_name,
-        "vram_gb": vram_gb
+    # 2. Deepgram Service Check (Primary STT & Diarization)
+    deepgram_service = DeepgramService()
+    deepgram_configured = deepgram_service.is_configured()
+    deepgram_health = {
+        "configured": deepgram_configured,
+        "model": getattr(settings, "DEEPGRAM_MODEL", "nova-2"),
+        "status_message": "Deepgram Cloud STT ready" if deepgram_configured else "DEEPGRAM_API_KEY unconfigured in backend/.env"
     }
 
-    # 3. pyannote Diarization & HF Token Check
-    diarizer = Diarizer()
-    hf_token_set = bool(settings.HF_TOKEN or os.environ.get("HF_TOKEN", "").strip())
-    diarization_ready, diar_msg = diarizer.is_available()
+    # 3. Speaker Diarization Health
+    diarization_health = {
+        "model": f"deepgram-{getattr(settings, 'DEEPGRAM_MODEL', 'nova-2')}",
+        "token_configured": deepgram_configured,
+        "status_message": "Native Deepgram speaker diarization enabled" if deepgram_configured else "Requires DEEPGRAM_API_KEY",
+        "is_ready": deepgram_configured
+    }
 
     # 4. Ollama Status & Pulled Models Check
     ollama_client = OllamaClient()
@@ -56,24 +43,13 @@ async def get_system_health() -> Dict[str, Any]:
     resolved_model = await ollama_client.resolve_model() if ollama_connected else "None"
 
     return {
-        "status": "healthy" if ffmpeg_ok else "warning",
+        "status": "healthy" if (ffmpeg_ok and deepgram_configured) else "warning",
         "ffmpeg": {
             "available": ffmpeg_ok,
             "path": ffmpeg_path
         },
-        "parakeet": parakeet_health,
-        "whisper": parakeet_health,
-
-        "diarization": {
-            "model": settings.DIARIZATION_MODEL,
-            "token_configured": hf_token_set,
-            "status_message": diar_msg,
-            "is_ready": diarization_ready and hf_token_set,
-            "instructions": (
-                "To enable pyannote speaker diarization, accept terms at "
-                "https://huggingface.co/pyannote/speaker-diarization-3.1 and set HF_TOKEN in your environment."
-            )
-        },
+        "deepgram": deepgram_health,
+        "diarization": diarization_health,
         "ollama": {
             "base_url": settings.OLLAMA_BASE_URL,
             "connected": ollama_connected,
