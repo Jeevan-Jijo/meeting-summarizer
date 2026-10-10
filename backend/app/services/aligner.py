@@ -22,14 +22,14 @@ def align_transcript_with_speakers(
         for i, seg in enumerate(transcript_segments):
             seg_copy = dict(seg)
             seg_copy["speaker_tag"] = "SPEAKER_00"
-            seg_copy["speaker_label"] = "Speaker 00"
+            seg_copy["speaker_label"] = "Unknown Speaker"
             aligned_segments.append(seg_copy)
 
         total_time = sum(s["end"] - s["start"] for s in transcript_segments)
         speaker_stats = {
             "SPEAKER_00": {
                 "speaker_tag": "SPEAKER_00",
-                "display_name": "Speaker 00",
+                "display_name": "Unknown Speaker",
                 "speaking_time_seconds": round(total_time, 2),
                 "speaking_percentage": 100.0,
                 "turn_count": len(transcript_segments),
@@ -42,7 +42,7 @@ def align_transcript_with_speakers(
     unique_speakers = sorted(list(set(t["speaker"] for t in speaker_turns)))
     speaker_tag_to_label = {}
     for idx, tag in enumerate(unique_speakers):
-        speaker_tag_to_label[tag] = f"Speaker {idx:02d}"
+        speaker_tag_to_label[tag] = f"Speaker {idx + 1}"
 
     aligned_segments = []
     speaker_durations = {tag: 0.0 for tag in unique_speakers}

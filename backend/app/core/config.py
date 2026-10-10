@@ -35,11 +35,29 @@ class Settings(BaseSettings):
     OLLAMA_TEMPERATURE: float = 0.1
     OLLAMA_TIMEOUT_SECONDS: float = 180.0
     
-    # faster-whisper Speech-to-Text
-    WHISPER_MODEL: str = "base.en"
-    WHISPER_FALLBACK_MODEL: str = "base.en"
-    WHISPER_DEVICE: str = "auto"
-    WHISPER_COMPUTE_TYPE: str = "float16"
+    # NVIDIA Parakeet Speech-to-Text
+    PARAKEET_MODEL: str = "nvidia/parakeet-tdt-0.6b-v2"
+    PARAKEET_FALLBACK_MODEL: str = "nvidia/parakeet-tdt-0.6b-v2"
+    PARAKEET_DEVICE: str = "auto"
+    PARAKEET_COMPUTE_TYPE: str = "float16"
+
+    # Backward compatibility properties
+    @property
+    def WHISPER_MODEL(self) -> str:
+        return self.PARAKEET_MODEL
+
+    @property
+    def WHISPER_FALLBACK_MODEL(self) -> str:
+        return self.PARAKEET_FALLBACK_MODEL
+
+    @property
+    def WHISPER_DEVICE(self) -> str:
+        return self.PARAKEET_DEVICE
+
+    @property
+    def WHISPER_COMPUTE_TYPE(self) -> str:
+        return self.PARAKEET_COMPUTE_TYPE
+
     
     # pyannote Speaker Diarization
     HF_TOKEN: str = ""

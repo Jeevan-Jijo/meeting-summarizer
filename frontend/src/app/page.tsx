@@ -239,9 +239,9 @@ export default function DashboardPage() {
               </div>
 
               <div className="flex justify-between items-center pb-2 border-b border-slate-100 dark:border-slate-800">
-                <span className="text-slate-500">faster-whisper STT:</span>
+                <span className="text-slate-500">NVIDIA Parakeet STT:</span>
                 <span className="font-semibold text-slate-700 dark:text-slate-300">
-                  {health?.whisper?.device?.toUpperCase()} ({health?.whisper?.compute_type})
+                  {(health?.parakeet || health?.whisper)?.device?.toUpperCase()} ({(health?.parakeet || health?.whisper)?.compute_type})
                 </span>
               </div>
 

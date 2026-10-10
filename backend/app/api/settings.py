@@ -20,8 +20,8 @@ async def get_system_health() -> Dict[str, Any]:
     ffmpeg_ok = is_ffmpeg_available()
     ffmpeg_path = shutil.which("ffmpeg") or "Not found in PATH"
 
-    # 2. faster-whisper & PyTorch CUDA check
-    whisper_device, whisper_compute = detect_device_and_compute_type()
+    # 2. NVIDIA Parakeet & PyTorch CUDA check
+    parakeet_device, parakeet_compute = detect_device_and_compute_type()
     cuda_available = False
     gpu_name = None
     vram_gb = 0.0
@@ -33,6 +33,16 @@ async def get_system_health() -> Dict[str, Any]:
             vram_gb = round(torch.cuda.get_device_properties(0).total_memory / (1024**3), 2)
     except Exception:
         pass
+
+    parakeet_health = {
+        "primary_model": getattr(settings, "PARAKEET_MODEL", "nvidia/parakeet-tdt-0.6b-v2"),
+        "fallback_model": getattr(settings, "PARAKEET_FALLBACK_MODEL", "nvidia/parakeet-tdt-0.6b-v2"),
+        "device": parakeet_device,
+        "compute_type": parakeet_compute,
+        "cuda_available": cuda_available,
+        "gpu_name": gpu_name,
+        "vram_gb": vram_gb
+    }
 
     # 3. pyannote Diarization & HF Token Check
     diarizer = Diarizer()
@@ -51,15 +61,9 @@ async def get_system_health() -> Dict[str, Any]:
             "available": ffmpeg_ok,
             "path": ffmpeg_path
         },
-        "whisper": {
-            "primary_model": settings.WHISPER_MODEL,
-            "fallback_model": settings.WHISPER_FALLBACK_MODEL,
-            "device": whisper_device,
-            "compute_type": whisper_compute,
-            "cuda_available": cuda_available,
-            "gpu_name": gpu_name,
-            "vram_gb": vram_gb
-        },
+        "parakeet": parakeet_health,
+        "whisper": parakeet_health,
+
         "diarization": {
             "model": settings.DIARIZATION_MODEL,
             "token_configured": hf_token_set,

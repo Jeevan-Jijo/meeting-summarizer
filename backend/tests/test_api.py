@@ -22,6 +22,7 @@ def test_health_endpoint():
         assert response.status_code == 200
         data = response.json()
         assert "ffmpeg" in data
+        assert "parakeet" in data
         assert "whisper" in data
         assert "ollama" in data
         assert "diarization" in data

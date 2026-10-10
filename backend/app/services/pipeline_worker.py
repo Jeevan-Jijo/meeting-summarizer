@@ -108,8 +108,8 @@ async def process_meeting_pipeline(meeting_id: int, job_id: int):
         meeting.duration_seconds = duration
         db.commit()
 
-        # Step 2: TRANSCRIBING (faster-whisper)
-        await update_job_status(db, job_id, "TRANSCRIBING", 25.0, "Transcribing with faster-whisper", "Transcribing audio segments...")
+        # Step 2: TRANSCRIBING (NVIDIA Parakeet)
+        await update_job_status(db, job_id, "TRANSCRIBING", 25.0, "Transcribing with NVIDIA Parakeet", "Transcribing audio segments with nvidia/parakeet-tdt-0.6b-v2...")
         transcriber = Transcriber()
         try:
             raw_segments, detected_language = await asyncio.to_thread(transcriber.transcribe, normalized_wav_path)

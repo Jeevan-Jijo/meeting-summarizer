@@ -89,10 +89,10 @@ export const Sidebar: React.FC = () => {
         <div className="space-y-1.5 text-[11px] text-slate-500 dark:text-slate-400">
           <div className="flex justify-between items-center">
             <span className="flex items-center gap-1">
-              <Cpu className="w-3 h-3 text-slate-400" /> Whisper:
+              <Cpu className="w-3 h-3 text-slate-400" /> Parakeet:
             </span>
             <span className="font-mono text-slate-700 dark:text-slate-300">
-              {health?.whisper?.device?.toUpperCase() || 'GPU/CPU'}
+              {(health?.parakeet || health?.whisper)?.device?.toUpperCase() || 'GPU/CPU'}
             </span>
           </div>
           <div className="flex justify-between items-center">

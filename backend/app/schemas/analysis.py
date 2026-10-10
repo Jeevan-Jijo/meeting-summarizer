@@ -97,7 +97,7 @@ class MeetingAnalysis(BaseModel):
             for item in v:
                 if isinstance(item, str):
                     res.append({"takeaway": item, "category": "General"})
-                elif isinstance(item, dict):
+                else:
                     res.append(item)
             return res
         return v
@@ -110,7 +110,7 @@ class MeetingAnalysis(BaseModel):
             for item in v:
                 if isinstance(item, str):
                     res.append({"point": item, "category": "General"})
-                elif isinstance(item, dict):
+                else:
                     res.append(item)
             return res
         return v
@@ -128,6 +128,8 @@ class MeetingAnalysis(BaseModel):
                         item["raw_phrase"] = item.get("date") or item.get("phrase") or "Date"
                     if "description" not in item:
                         item["description"] = item.get("raw_phrase") or "Milestone date"
+                    res.append(item)
+                else:
                     res.append(item)
             return res
         return v
@@ -151,7 +153,7 @@ class ChunkAnalysis(BaseModel):
             for item in v:
                 if isinstance(item, str):
                     res.append({"takeaway": item, "category": "General"})
-                elif isinstance(item, dict):
+                else:
                     res.append(item)
             return res
         return v
@@ -164,7 +166,7 @@ class ChunkAnalysis(BaseModel):
             for item in v:
                 if isinstance(item, str):
                     res.append({"point": item, "category": "General"})
-                elif isinstance(item, dict):
+                else:
                     res.append(item)
             return res
         return v
@@ -182,6 +184,8 @@ class ChunkAnalysis(BaseModel):
                         item["raw_phrase"] = item.get("date") or item.get("phrase") or "Date"
                     if "description" not in item:
                         item["description"] = item.get("raw_phrase") or "Milestone date"
+                    res.append(item)
+                else:
                     res.append(item)
             return res
         return v

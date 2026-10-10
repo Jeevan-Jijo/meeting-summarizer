@@ -12,8 +12,8 @@ services:
       - OLLAMA_BASE_URL=http://host.docker.internal:11434
       - OLLAMA_MODEL=qwen3:8b
       - HF_TOKEN=${HF_TOKEN:-}
-      - WHISPER_MODEL=openai/whisper-large-v3-turbo
-      - WHISPER_DEVICE=cpu
+      - PARAKEET_MODEL=nvidia/parakeet-tdt-0.6b-v2
+      - PARAKEET_DEVICE=cpu
     volumes:
       - ./backend/data:/app/data
     extra_hosts:

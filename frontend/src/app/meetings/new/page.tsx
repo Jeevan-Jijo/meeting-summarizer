@@ -131,7 +131,7 @@ export default function NewMeetingPage() {
               Processing Meeting on Local AI Pipeline
             </h3>
             <p className="text-xs text-slate-500 dark:text-slate-400">
-              Executing faster-whisper STT, pyannote diarization, and Ollama Qwen3 extraction.
+              Executing NVIDIA Parakeet STT, PyAnnote diarization, and Ollama Qwen3 extraction.
             </p>
           </div>
 

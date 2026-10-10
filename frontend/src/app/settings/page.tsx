@@ -64,7 +64,7 @@ export default function SettingsPage() {
           <span>Local-First Guarantee</span>
         </div>
         <p className="text-xs text-slate-700 dark:text-slate-300 leading-relaxed">
-          All audio normalization, Whisper speech-to-text, PyAnnote diarization, and Ollama Qwen3 reasoning run strictly on your local PC. Zero external API calls or pay-per-use cloud dependencies.
+          All audio normalization, NVIDIA Parakeet speech-to-text, PyAnnote diarization, and Ollama Qwen3 reasoning run strictly on your local PC. Zero external API calls or pay-per-use cloud dependencies.
         </p>
       </Card>
 
@@ -91,36 +91,36 @@ export default function SettingsPage() {
           </div>
         </Card>
 
-        {/* 2. faster-whisper STT */}
+        {/* 2. NVIDIA Parakeet STT */}
         <Card className="p-5 space-y-3">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <span className="font-semibold text-slate-900 dark:text-slate-100 text-sm">
-                faster-whisper (Speech-to-Text)
+                NVIDIA Parakeet (Speech-to-Text)
               </span>
               <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-500">
                 Ready
               </span>
             </div>
             <span className="text-xs font-mono text-slate-500">
-              {health?.whisper?.device?.toUpperCase()} ({health?.whisper?.compute_type})
+              {(health?.parakeet || health?.whisper)?.device?.toUpperCase()} ({(health?.parakeet || health?.whisper)?.compute_type})
             </span>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs bg-slate-50 dark:bg-slate-800/40 p-3 rounded-xl border border-slate-200/50 dark:border-slate-700/50">
             <div>
               <span className="text-slate-500 block">Primary Model:</span>
-              <span className="font-mono font-medium text-slate-800 dark:text-slate-200">{health?.whisper?.primary_model}</span>
+              <span className="font-mono font-medium text-slate-800 dark:text-slate-200">{(health?.parakeet || health?.whisper)?.primary_model}</span>
             </div>
             <div>
               <span className="text-slate-500 block">CUDA Acceleration:</span>
               <span className="font-medium text-slate-800 dark:text-slate-200">
-                {health?.whisper?.cuda_available ? `Yes (${health?.whisper?.gpu_name || 'GPU'})` : 'CPU Mode'}
+                {(health?.parakeet || health?.whisper)?.cuda_available ? `Yes (${(health?.parakeet || health?.whisper)?.gpu_name || 'GPU'})` : 'CPU Mode'}
               </span>
             </div>
             <div>
               <span className="text-slate-500 block">VRAM Available:</span>
-              <span className="font-mono font-medium text-slate-800 dark:text-slate-200">{health?.whisper?.vram_gb || 0} GB</span>
+              <span className="font-mono font-medium text-slate-800 dark:text-slate-200">{(health?.parakeet || health?.whisper)?.vram_gb || 0} GB</span>
             </div>
           </div>
         </Card>

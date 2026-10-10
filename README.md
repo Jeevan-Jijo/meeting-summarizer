@@ -1,7 +1,7 @@
 # Meeting Intelligence System (MIS)
 
 > **A 100% Local-First, Privacy-Preserving AI Meeting Intelligence System**  
-> Runs entirely on your local Windows PC with local GPU/CPU inference, Ollama (`qwen3:8b`), faster-whisper, PyAnnote diarization, and FAISS vector retrieval. Zero external API calls, zero subscriptions, zero cloud data leaks.
+> Runs entirely on your local Windows PC with local GPU/CPU inference, Ollama (`qwen3:8b`), NVIDIA Parakeet (`nvidia/parakeet-tdt-0.6b-v2`), PyAnnote diarization, and FAISS vector retrieval. Zero external API calls, zero subscriptions, zero cloud data leaks.
 
 ---
 
@@ -9,7 +9,7 @@
 
 1. **Browser Recording & File Ingestion**: Record meetings live via the browser microphone or upload any audio/video file (`.mp3`, `.wav`, `.m4a`, `.mp4`, `.webm`, `.flac`, `.ogg`, `.mkv`).
 2. **Audio Normalization**: Automatic FFmpeg 16kHz mono 16-bit PCM normalization.
-3. **Timestamped Speech-to-Text**: High-speed, local transcription using `faster-whisper` (`openai/whisper-large-v3-turbo` with CUDA float16 / CPU int8 fallback).
+3. **Timestamped Speech-to-Text**: High-speed, local transcription using **NVIDIA Parakeet** (`nvidia/parakeet-tdt-0.6b-v2` via NVIDIA NeMo toolkit with CUDA / CPU fallback).
 4. **Speaker Diarization**: Open-weights speaker identification using `pyannote/speaker-diarization-3.1` (with graceful fallback if no HuggingFace token is provided).
 5. **Manual Speaker Renaming**: Rename `Speaker 1` to real names with instant global updates across all transcript segments and analytics.
 6. **Structured LLM Extractions (Ollama Qwen3)**:
@@ -31,7 +31,7 @@
 
 - **Operating System**: Windows 11 (or 10 / Linux)
 - **Processor & GPU**: Tested on AMD Ryzen 7 7840HS, NVIDIA RTX 4060 Laptop GPU (8 GB VRAM), 16 GB RAM.
-- **Python**: Python 3.12 (available via `py -3.12`)
+- **Python**: Python 3.9 - 3.12
 - **Node.js**: Node.js 20+ (v24.x tested)
 - **FFmpeg**: Installed and in system `PATH`
 - **Ollama**: Installed and serving locally on `http://localhost:11434`
@@ -42,7 +42,7 @@
 
 ### Step 1: Clone or Open Project
 ```powershell
-cd d:\Programs\MIS
+cd e:\PROJECTS\MIS
 ```
 
 ### Step 2: Set Up Ollama with Qwen3
@@ -55,10 +55,10 @@ ollama pull qwen3:8b
 ollama pull qwen2.5:7b
 ```
 
-### Step 3: Set Up Backend (Python 3.12)
+### Step 3: Set Up Backend (Python)
 ```powershell
-# Create Python 3.12 virtual environment
-py -3.12 -m venv backend/venv
+# Create Python virtual environment
+python -m venv backend/venv
 
 # Activate virtual environment
 .\backend\venv\Scripts\Activate.ps1
@@ -101,7 +101,7 @@ PyAnnote 3.1 is an open-weights model requiring a one-time free terms acceptance
 1. `UPLOADED` - Audio/video uploaded or recorded.
 2. `QUEUED` - Job registered in SQLite database.
 3. `PREPROCESSING` - Audio converted to 16kHz mono WAV via FFmpeg.
-4. `TRANSCRIBING` - Whisper generates timestamped segments.
+4. `TRANSCRIBING` - NVIDIA Parakeet generates timestamped segments.
 5. `DIARIZING` - PyAnnote segments speakers.
 6. `ALIGNING` - Matches transcript segments with speaker turns.
 7. `CHUNKING` - Semantic chunking with preserved metadata.
@@ -115,11 +115,11 @@ PyAnnote 3.1 is an open-weights model requiring a one-time free terms acceptance
 ## Troubleshooting
 
 ### CUDA / GPU Acceleration
-- If `faster-whisper` fails to load CUDA libraries (`cublas64_12.dll` or `cudnn_ops_infer64_8.dll`), the backend automatically falls back to CPU computation (`int8` quantization).
-- To force CPU or GPU mode, edit `WHISPER_DEVICE=cuda` or `WHISPER_DEVICE=cpu` in `.env`.
+- If PyTorch CUDA acceleration is unavailable or disabled, the backend automatically falls back to CPU computation (`float32`).
+- To force CPU or GPU mode, set `PARAKEET_DEVICE=cuda` or `PARAKEET_DEVICE=cpu` in backend settings / environment.
 
 ### Memory Management (8 GB VRAM)
-- GPU stages are executed sequentially: Whisper transcribes and PyAnnote diarizes, then VRAM cache is freed before Ollama LLM requests are dispatched.
+- GPU stages are executed sequentially: NVIDIA Parakeet transcribes and PyAnnote diarizes, then VRAM cache is freed before Ollama LLM requests are dispatched.
 
 ### Ollama Connectivity
 - Check that Ollama is running: `Invoke-RestMethod http://localhost:11434/api/tags`.
@@ -140,7 +140,7 @@ All audio recordings, transcripts, vector indices, and LLM inferences remain **s
 
 | Component | Upstream Model / Library | License |
 |---|---|---|
-| **Speech Recognition** | `faster-whisper` / `openai/whisper` | MIT |
+| **Speech Recognition** | `NVIDIA Parakeet` / `nvidia/parakeet-tdt-0.6b-v2` (NVIDIA NeMo) | CC-BY-4.0 |
 | **LLM Inference** | `qwen3:8b` / Qwen Team | Apache-2.0 |
 | **Diarization** | `pyannote/speaker-diarization-3.1` | MIT (Gated Model) |
 | **Embeddings** | `sentence-transformers/all-MiniLM-L6-v2` | Apache-2.0 |
